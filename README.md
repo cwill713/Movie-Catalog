@@ -1,4 +1,4 @@
-# Netflix Movie Table API
+# Movie Catalog
 
 A full-stack web app and REST API for managing a personal movie list. Built with **FastAPI**, **SQLite**, and **Jinja2** templates.
 
