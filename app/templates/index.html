@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Personal Movie Catalog</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}?v=7">
+</head>
+<body>
+    <div class="title-row">
+        <img src="{{ url_for('static', path='absolute-cinema.jpg') }}" alt="Absolute Cinema" class="title-img">
+        <h1>Welcome to the Personal Movie Catalog</h1>
+        <img src="{{ url_for('static', path='absolute-cinema.jpg') }}" alt="Absolute Cinema" class="title-img">
+    </div>
+
+    <div class="filter-table">
+        <div class="search-form-cell">
+            <form id="search-title-form" class="search-form">
+                <input type="text" id="search-title" name="search-title" maxlength="100" placeholder="Search By Movie Title">
+                <button type="submit" form="search-title-form">Search</button>
+                <button type="reset" form="search-title-form">Clear All</button>
+            </form>
+        </div>
+    </div>
+    <div class="input-movie-button">
+                <button type="button" onclick="openMovieInputWindow()">Input Movie</button>
+                <button type="button" id="delete-selected-btn" onclick="deleteSelectedMovies()" disabled>Delete Selected</button>
+    </div>
+    <table id="movie-grid-table">
+        <thead>
+            <tr>
+                <th class="checkbox-col"><input type="checkbox" id="select-all-cb" onclick="toggleSelectAll(this)"></th>
+                <th data-sort="title" onclick="sortTable('title')">Title<span class="sort-arrow"></span></th>
+                <th data-sort="year" onclick="sortTable('year')">Year<span class="sort-arrow"></span></th>
+                <th data-sort="genre_one" onclick="sortTable('genre_one')">Genre 1<span class="sort-arrow"></span></th>
+                <th data-sort="genre_two" onclick="sortTable('genre_two')">Genre 2<span class="sort-arrow"></span></th>
+                <th data-sort="genre_three" onclick="sortTable('genre_three')">Genre 3<span class="sort-arrow"></span></th>
+                <th data-sort="rating" onclick="sortTable('rating')">Rating<span class="sort-arrow"></span></th>
+                <th class="edit-col">Edit</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for movie in movies %}
+            <tr>
+                <td class="checkbox-col"><input type="checkbox" class="movie-cb" value="{{ movie.id }}" onchange="onCheckboxChange()"></td>
+                <td>{{ movie.title }}</td>
+                <td>{{ movie.year }}</td>
+                <td>{{ movie.genre_one }}</td>
+                <td>{{ movie.genre_two }}</td>
+                <td>{{ movie.genre_three }}</td>
+                <td>{{ "%.1f"|format(movie.rating) }}</td>
+                <td class="edit-col">
+                    <button class="edit-btn" title="Edit movie"
+                        data-id="{{ movie.id }}"
+                        onclick="openMovieEditWindow(this.dataset.id)"></button>
+                </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="8" style="text-align:center; color:#999; font-style:italic; padding:2rem;">There is no current data</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <!-- Custom confirm modal -->
+    <div id="confirm-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <div class="modal">
+            <div class="modal-header">
+                <span id="modal-title">Confirm Deletion</span>
+            </div>
+            <div class="modal-body">
+                <p id="modal-message"></p>
+            </div>
+            <div class="modal-footer">
+                <button id="modal-cancel-btn" class="modal-btn modal-btn-cancel">Cancel</button>
+                <button id="modal-ok-btn" class="modal-btn modal-btn-ok">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', path='app.js') }}"></script>
+</body>
+
+</html>

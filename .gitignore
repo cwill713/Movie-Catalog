@@ -1,0 +1,16 @@
+# Ignore everything at the root level
+/*
+
+# Keep only these
+!.gitignore
+!/README.md
+!/requirements.txt
+!/app/
+
+# Inside app/, ignore generated/runtime files
+app/__pycache__/
+app/**/__pycache__/
+app/*.db
+app/*.sqlite
+app/*.sqlite3
+app/**/*.pyc

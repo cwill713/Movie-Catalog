@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Input Movie Data</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}?v=5">
+    <style>
+        body {
+            padding: 1.5rem;
+            overflow: hidden;
+        }
+        h2 {
+            color: var(--red);
+            font-size: 1.4rem;
+            font-weight: 700;
+            text-align: center;
+            margin-bottom: 1.2rem;
+        }
+    </style>
+</head>
+<body>
+    <h2>Input Movie Data</h2>
+    <div id="movie-input-table">
+        <div class="movie-form-cell">
+            <form id="movie-title-form" class="movie-form">
+                <input type="text" id="movie-title" name="movie-title" maxlength="100" placeholder="Enter A Movie Title" value="{{ movie.title }}" required>
+            </form>
+        </div>
+        <div class="movie-form-cell">
+            <form id="movie-year-form" class="movie-form">
+                <input type="number" id="movie-year" name="movie-year" minlength="4" maxlength="4" placeholder="Enter The Movie Release Year" value="{{ movie.year }}" required>
+            </form>
+        </div>
+        <div class="movie-form-cell">
+            <form id="movie-genre-one-form" class="movie-form">
+                <input type="text" id="movie-genre-one" name="movie-genre-one" maxlength="100" placeholder="Enter The First Movie Genre" value="{{ movie.genre_one }}" required>
+            </form>
+        </div>
+        <div class="movie-form-cell">
+            <form id="movie-genre-two-form" class="movie-form">
+                <input type="text" id="movie-genre-two" name="movie-genre-two" maxlength="100" placeholder="Enter An Optional Second Movie Genre" value="{{ movie.genre_two or '' }}">
+            </form>
+        </div>
+        <div class="movie-form-cell">
+            <form id="movie-genre-three-form" class="movie-form">
+                <input type="text" id="movie-genre-three" name="movie-genre-three" maxlength="100" placeholder="Enter An Optional Third Movie Genre" value="{{ movie.genre_three or '' }}">
+            </form>
+        </div>
+        <div class="movie-form-cell">
+            <form id="movie-rating-form" class="movie-form">
+                <input type="number" id="movie-rating" name="movie-rating" min="0" max="10" step="0.1" inputmode="decimal" placeholder="Enter The Movie Rating (0.0 to 10)" value="{{ '%.1f'|format(movie.rating) }}" required>
+            </form>
+        </div>
+        <div class="button-row">
+            <button type="submit" form="movie-rating-form">Submit</button>
+            <button type="reset" form="movie-rating-form">Clear</button>
+        </div>
+    </div>
+
+    <script>
+        const movieId = {{ movie.id }};
+        const movieTitleInput = document.getElementById('movie-title');
+        const movieYearInput = document.getElementById('movie-year');
+        const movieGenreOneInput = document.getElementById('movie-genre-one');
+        const movieGenreTwoInput = document.getElementById('movie-genre-two');
+        const movieGenreThreeInput = document.getElementById('movie-genre-three');
+        const movieRatingInput = document.getElementById('movie-rating');
+        const movieRatingForm = document.getElementById('movie-rating-form');
+
+        movieRatingForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+
+            const title = movieTitleInput.value.trim();
+            const year = parseInt(movieYearInput.value);
+            const genreOne = movieGenreOneInput.value.trim();
+            const genreTwo = movieGenreTwoInput.value.trim();
+            const genreThree = movieGenreThreeInput.value.trim();
+            const rating = parseFloat(movieRatingInput.value);
+
+            if (!title) {
+                alert('Please enter a movie title.');
+                return;
+            } else if (isNaN(year)) {
+                alert('Please enter a valid release year.');
+                return;
+            } else if (!genreOne) {
+                alert('Please enter at least one movie genre.');
+                return;
+            } else if (isNaN(rating) || rating < 0 || rating > 10) {
+                alert('Please enter a valid movie rating between 0.0 and 10.');
+                return;
+            }
+
+            const response = await fetch(`/api/movies/${movieId}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    title,
+                    year,
+                    genre_one: genreOne,
+                    genre_two: genreTwo || null,
+                    genre_three: genreThree || null,
+                    rating
+                })
+            });
+
+            if (!response.ok) {
+                alert('Update failed.');
+                return;
+            }
+
+            if (window.opener) {
+                window.opener.location.reload();
+            }
+            window.close();
+        });
+
+        movieRatingForm.addEventListener('reset', (event) => {
+            event.preventDefault();
+
+            movieTitleInput.value = '';
+            movieYearInput.value = '';
+            movieGenreOneInput.value = '';
+            movieGenreTwoInput.value = '';
+            movieGenreThreeInput.value = '';
+            movieRatingInput.value = '';
+        });
+    </script>
+    <script>
+        window.addEventListener('load', () => {
+            const w = document.documentElement.scrollWidth;
+            const h = document.documentElement.scrollHeight;
+            window.resizeTo(w, h);
+        });
+    </script>
+</body>
+</html>
