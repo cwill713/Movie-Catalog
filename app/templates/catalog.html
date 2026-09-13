@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Browse Catalog</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}?v=10">
+    <style>
+        .catalog-filters {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            align-items: center;
+            padding: 0 1.5rem 1rem;
+        }
+        .catalog-filters select,
+        .catalog-filters input[type="number"] {
+            background: #1a1214;
+            border: 1px solid #3a2a2e;
+            color: #e8dcde;
+            border-radius: 6px;
+            padding: 0.45rem 0.6rem;
+            font-size: 0.85rem;
+            font-family: inherit;
+        }
+        .catalog-filters input[type="number"] { width: 6.5rem; }
+        .catalog-filters label {
+            font-size: 0.75rem;
+            color: #9a8a8d;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+        }
+        .catalog-count {
+            padding: 0 1.5rem 0.75rem;
+            font-size: 0.85rem;
+            color: #9a8a8d;
+        }
+        .catalog-count strong { color: #e8dcde; }
+        .imdb-badge {
+            position: absolute;
+            top: 0.5rem;
+            right: 0.5rem;
+            background: rgba(0, 0, 0, 0.72);
+            color: #ffd54a;
+            font-size: 0.7rem;
+            font-weight: 700;
+            padding: 0.15rem 0.4rem;
+            border-radius: 4px;
+            z-index: 3;
+        }
+        .seen-badge {
+            position: absolute;
+            top: 0.5rem;
+            left: 0.5rem;
+            background: rgba(122, 31, 44, 0.92);
+            color: #fff;
+            font-size: 0.65rem;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            padding: 0.18rem 0.45rem;
+            border-radius: 4px;
+            z-index: 3;
+        }
+        .load-more {
+            display: block;
+            margin: 1.5rem auto 3rem;
+            background: #7a1f2c;
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            padding: 0.7rem 1.6rem;
+            font-size: 0.9rem;
+            font-family: inherit;
+            cursor: pointer;
+        }
+        .load-more:hover { background: #962636; }
+        .load-more[hidden] { display: none; }
+    </style>
+</head>
+<body>
+    <div class="top-bar">
+        <div class="brand">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+                <rect x="2" y="3" width="20" height="18" rx="3" stroke="#7a1f2c" stroke-width="1.6"/>
+                <path d="M2 8h20M7 3v5M17 3v5" stroke="#7a1f2c" stroke-width="1.6"/>
+            </svg>
+            <h1>Browse Catalog</h1>
+        </div>
+        <div class="toolbar">
+            <form id="catalog-search-form" class="search-form">
+                <button type="submit" class="search-submit-btn" aria-label="Search">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
+                        <circle cx="11" cy="11" r="7" stroke="#8a8a8a" stroke-width="2"/>
+                        <path d="M21 21l-4.3-4.3" stroke="#8a8a8a" stroke-width="2" stroke-linecap="round"/>
+                    </svg>
+                </button>
+                <input type="text" id="catalog-q" maxlength="100" placeholder="Search {{ "{:,}".format(total) }} titles">
+                <button type="reset" class="search-clear-btn">Clear</button>
+            </form>
+            <a href="/" class="btn-primary" style="text-decoration:none">My Catalog</a>
+        </div>
+    </div>
+
+    <div class="catalog-filters">
+        <label for="f-genre">Genre</label>
+        <select id="f-genre">
+            <option value="">Any</option>
+            {% for g in genres %}<option value="{{ g }}">{{ g }}</option>{% endfor %}
+        </select>
+
+        <label for="f-type">Type</label>
+        <select id="f-type">
+            <option value="">Any</option>
+            <option value="movie">Movie</option>
+            <option value="tvSeries">TV series</option>
+            <option value="tvMiniSeries">Mini-series</option>
+            <option value="tvMovie">TV movie</option>
+        </select>
+
+        <label for="f-from">Years</label>
+        <input type="number" id="f-from" min="1888" max="2030" placeholder="From">
+        <input type="number" id="f-to" min="1888" max="2030" placeholder="To">
+
+        <label for="f-rating">Min rating</label>
+        <input type="number" id="f-rating" min="0" max="10" step="0.1" placeholder="e.g. 7.5">
+
+        <label class="select-all-control" style="text-transform:none;letter-spacing:0">
+            <input type="checkbox" id="f-unseen"> Hide what we've seen
+        </label>
+    </div>
+
+    <div class="catalog-count" id="catalog-count"></div>
+    <div id="catalog-grid" class="poster-grid"></div>
+    <button type="button" id="load-more" class="load-more" hidden>Load more</button>
+
+    <script>
+        const PAGE = 60;
+        let offset = 0;
+        let lastCount = 0;
+
+        const grid = document.getElementById('catalog-grid');
+        const countEl = document.getElementById('catalog-count');
+        const moreBtn = document.getElementById('load-more');
+        const form = document.getElementById('catalog-search-form');
+
+        const inputs = {
+            q: document.getElementById('catalog-q'),
+            genre: document.getElementById('f-genre'),
+            title_type: document.getElementById('f-type'),
+            year_from: document.getElementById('f-from'),
+            year_to: document.getElementById('f-to'),
+            min_rating: document.getElementById('f-rating'),
+            exclude_watched: document.getElementById('f-unseen'),
+        };
+
+        function buildQuery() {
+            const p = new URLSearchParams();
+            if (inputs.q.value.trim())      p.set('q', inputs.q.value.trim());
+            if (inputs.genre.value)         p.set('genre', inputs.genre.value);
+            if (inputs.title_type.value)    p.set('title_type', inputs.title_type.value);
+            if (inputs.year_from.value)     p.set('year_from', inputs.year_from.value);
+            if (inputs.year_to.value)       p.set('year_to', inputs.year_to.value);
+            if (inputs.min_rating.value)    p.set('min_rating', inputs.min_rating.value);
+            if (inputs.exclude_watched.checked) p.set('exclude_watched', 'true');
+            p.set('limit', PAGE);
+            p.set('offset', offset);
+            return p.toString();
+        }
+
+        function card(title, i) {
+            const genres = (title.genres || []).slice(0, 3)
+                .map(g => `<span class="genre-pill">${g}</span>`).join('');
+            const rating = title.imdb_rating !== null ? title.imdb_rating.toFixed(1) : '—';
+            const year = title.end_year && title.end_year !== title.start_year
+                ? `${title.start_year}–${title.end_year}` : (title.start_year ?? '');
+            const poster = title.poster_url
+                ? `<img class="poster-img" src="${title.poster_url}" alt="" loading="lazy"
+                        style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover">`
+                : `<div class="poster-icon-bg poster-tint-${i % 5}" style="position:absolute;inset:0">
+                     <svg class="poster-icon" width="56" height="56" viewBox="0 0 24 24" fill="none">
+                       <path d="M3 7l3-4h4l-3 4M10 7l3-4h4l-3 4M17 7l3-4h2l-3 4M3 7h18v13a1 1 0 01-1 1H4a1 1 0 01-1-1V7z"
+                             stroke="#fff" stroke-width="1.4"/>
+                     </svg>
+                   </div>`;
+            const seen = title.watched ? `<div class="seen-badge">Seen</div>` : '';
+            return `
+                <div class="poster-card" data-imdb="${title.imdb_id}">
+                    ${poster}
+                    ${seen}
+                    <div class="imdb-badge">★ ${rating}</div>
+                    <div class="card-overlay">
+                        <div class="card-meta">
+                            <span class="year">${year}</span>
+                            <span class="year">${(title.imdb_votes ?? 0).toLocaleString()} votes</span>
+                        </div>
+                        <div class="card-title">${title.primary_title}</div>
+                        <div class="card-genres">${genres}</div>
+                    </div>
+                </div>`;
+        }
+
+        async function load(reset) {
+            if (reset) { offset = 0; grid.innerHTML = ''; }
+            const res = await fetch(`/api/catalog/search?${buildQuery()}`);
+            const rows = await res.json();
+            lastCount = rows.length;
+            grid.insertAdjacentHTML('beforeend',
+                rows.map((t, i) => card(t, offset + i)).join(''));
+            offset += rows.length;
+            countEl.innerHTML = grid.children.length
+                ? `Showing <strong>${grid.children.length}</strong> title${grid.children.length === 1 ? '' : 's'}`
+                : 'No titles match those filters.';
+            moreBtn.hidden = lastCount < PAGE;
+        }
+
+        form.addEventListener('submit', e => { e.preventDefault(); load(true); });
+        form.addEventListener('reset', e => {
+            e.preventDefault();
+            Object.values(inputs).forEach(el => {
+                if (el.type === 'checkbox') el.checked = false; else el.value = '';
+            });
+            load(true);
+        });
+        Object.values(inputs).forEach(el => {
+            if (el !== inputs.q) el.addEventListener('change', () => load(true));
+        });
+        moreBtn.addEventListener('click', () => load(false));
+
+        load(true);
+    </script>
+</body>
+</html>

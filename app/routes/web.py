@@ -4,6 +4,7 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.templating import Jinja2Templates
 
+from app.repositories import titles as titles_repo
 from app.repositories import watch_entries as crud
 
 
@@ -38,4 +39,13 @@ def movie_edit(request: Request, movie_id: UUID):
         request=request,
         name="movie_edit.html",
         context={"movie": movie},
+    )
+
+@router.get("/catalog")
+def catalog(request: Request):
+    stats = titles_repo.stats()
+    return templates.TemplateResponse(
+        request=request,
+        name="catalog.html",
+        context={"total": stats["total"], "genres": titles_repo.genres()},
     )

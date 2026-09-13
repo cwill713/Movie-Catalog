@@ -28,6 +28,8 @@ changes to **Superseded** and a new entry explains what replaced it.
 | [008](#adr-008) | Jinja now, React later | Accepted |
 | [009](#adr-009) | Archive untracked files rather than delete | Accepted |
 | [010](#adr-010) | Split docs between a public and a private repo | Accepted |
+| [011](#adr-011) | Bulk-load the catalog with COPY into a staging table | Accepted |
+| [012](#adr-012) | Catalog depth chosen by measurement, not estimate | Open |
 
 ---
 
@@ -435,3 +437,96 @@ gap, which was the larger risk.
 repository as well, regardless of which repo owns the folder. Putting the
 published-file exclusions there hid them from the public repo too. They belong
 in `docs/.git/info/exclude`, which is scoped to one repository.
+
+
+---
+
+## ADR-011
+
+### Bulk-load the catalog with COPY into a staging table
+
+**Status:** Accepted · 2026-09-13
+
+**Context.** The IMDb dumps hold 12,779,198 titles across two gzipped TSV files.
+The catalog needs a filtered subset of them, refreshed whenever the dumps are
+re-downloaded.
+
+**Decision.** Stream both files in Python, `COPY` the surviving rows into a temp
+staging table, then a single `INSERT ... ON CONFLICT DO UPDATE` into `titles`.
+
+**Why.**
+- `COPY` is the fastest way into Postgres by a wide margin; row-by-row
+  `INSERT` of tens of thousands of rows over a network round-trip each is
+  orders of magnitude slower.
+- Staging first means the upsert is one statement in one transaction — the
+  catalog is never half-updated.
+- `ON CONFLICT DO UPDATE` makes re-running idempotent, and re-running with a
+  lower vote threshold adds newly-qualifying titles without disturbing
+  existing rows.
+
+**Two details that matter.**
+
+The upsert **only refreshes IMDb-sourced columns.** `plot`, `poster_url`,
+`embedding` and the rest of the OMDb and embedding columns are left untouched.
+Those are expensive to regenerate — a re-ingest must never silently discard
+them.
+
+The ratings file is **filtered while reading**, before the titles pass. Keeping
+only entries that clear the vote threshold holds ~40k rows in memory instead of
+the full 1.7M.
+
+**Consequences.**
+- Scanning all 12.8M rows takes ~9 seconds; the upsert ~1 second.
+- Re-ingesting is cheap enough to be routine rather than a maintenance event.
+- Episode rows (~77% of the dumps) are filtered out entirely. Episode-level
+  tracking would need a separate ingest path.
+
+---
+
+## ADR-012
+
+### Catalog depth chosen by measurement, not estimate
+
+**Status:** ⚠️ **Open** — loaded at 5,000 votes; deeper is affordable
+
+**Context.** Catalog size is capped by the database's 500 MB limit. Planning
+estimated ~137 MB for 24k titles fully loaded, which implied 24k was near the
+practical ceiling.
+
+**Measured at 24,213 titles**, structured data only:
+
+| | |
+|---|---|
+| Heap (row data) | 5.2 MB |
+| Indexes | 12.1 MB |
+| Titles total | 17.3 MB |
+| **Per title** | **750 bytes** |
+
+The estimate was wrong in a useful direction. Indexes are more than twice the
+row data — seven of them, including two GIN indexes — but the total is far below
+what was projected.
+
+**Projected fully loaded** (structured + OMDb prose + a 768-dim `halfvec` +
+HNSW index) at roughly 5.2 KB per title:
+
+| Min votes | Titles | Structured | Fully loaded |
+|---|---|---|---|
+| 25,000 | 8,644 | 6 MB | 44 MB |
+| 10,000 | 15,547 | 11 MB | 78 MB |
+| **5,000** | **24,213** | **17 MB** | **122 MB** |
+| 2,500 | 37,605 | 27 MB | 190 MB |
+| 1,000 | 65,166 | 47 MB | 328 MB |
+| 500 | 95,374 | 68 MB | 481 MB ✗ |
+
+**Open question.** 65,166 titles at ~1,000 votes looks affordable, which was
+not the expectation going in.
+
+**The one number still unknown** is how large OMDb plot text actually is; 1.4 KB
+per title is a guess, and it is the largest uncertain term. That figure lands in
+Phase 4.
+
+Because structured rows are so cheap (47 MB for 65k), loading deep and enriching
+shallow is available as a middle path: every title becomes searchable and
+filterable, while only the most popular tier gets prose and embeddings.
+
+**Revisit.** In Phase 4, once real plot sizes are measured.
