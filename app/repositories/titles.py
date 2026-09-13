@@ -88,11 +88,26 @@ def search(
     # breaks the tie, which is what a user searching one word actually wants.
     # Weighted 70/30 so a strong text match still beats a merely popular one.
     #
-    # The WHERE has three indexed branches, and the operator direction matters:
+    # The WHERE has two indexed branches, and the operator direction matters:
     #
     #   ilike '%q%'        substrings, exact
-    #   title % q          whole-string similarity, catches typos on short titles
-    #   q <% title         word-level similarity, catches typos on LONG titles
+    #   q <% title         word-level similarity (threshold 0.6), catches typos
+    #
+    # There was a third branch, `title % q` (whole-string similarity, threshold
+    # 0.3). It was removed because it is far too loose for multi-word queries:
+    # similarity() compares whole strings, so "the hobbit" scored 0.429 against
+    # "The Hole" and 0.333 against "The Help" - both over the threshold - purely
+    # on the shared trigrams in "the ho". Searching "the hobbit" returned 103
+    # results; without that branch it returns 5.
+    #
+    # Counter-intuitively, adding a word to the query made results *worse*: the
+    # extra common word raised whole-string similarity against every unrelated
+    # title starting "The Ho".
+    #
+    # `<%` alone keeps typo tolerance, because it compares against the best
+    # matching word rather than the whole string: "inceptoin" still finds
+    # "Inception" and "shawshak" still finds "The Shawshank Redemption" - and
+    # "shawshak" stops also returning Shakma and Shakti.
     #
     # `<%` is "the first string matches a word in the second" - `%>` is its
     # commutator and takes the arguments the other way round. Getting that
@@ -120,7 +135,6 @@ def search(
          where (%(query)s::text is null
                 or t.primary_title ilike %(pattern)s::text
                 or t.original_title ilike %(pattern)s::text
-                or t.primary_title %% %(query)s::text
                 or %(query)s::text <%% t.primary_title)
            and (%(genre)s::text is null or %(genre)s::text = any(t.genres))
            and (%(title_type)s::text is null or t.title_type = %(title_type)s::text)
