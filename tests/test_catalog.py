@@ -181,3 +181,45 @@ def test_title_detail_shows_our_rating(client, stats):
 
 def test_title_detail_404s_for_unknown(client, stats):
     assert client.get("/title/tt00000000").status_code == 404
+
+
+# --- search ranking --------------------------------------------------------
+#
+# These exist because of a real regression. Ranking used similarity(), which
+# compares whole strings and so punishes long titles: searching "dragon" scored
+# a film literally called "Dragon" at 1.00 and "How to Train Your Dragon" at
+# 0.29. It looked fine at 24k titles and broke silently at 37k, when enough
+# short matches existed to fill the whole first page.
+
+def test_a_popular_long_title_outranks_obscure_exact_matches(client, stats):
+    """The regression: one-word query, long popular title must still surface."""
+    rows = client.get("/api/catalog/search", params={"q": "dragon", "limit": 10}).json()
+    titles = [r["primary_title"] for r in rows]
+    assert "How to Train Your Dragon" in titles, (
+        "a 900k-vote title fell out of the top 10 for its own keyword - "
+        "ranking is punishing title length again"
+    )
+
+
+def test_ranking_prefers_popularity_among_equal_text_matches(client, stats):
+    """Every result contains the word, so votes should drive the order."""
+    rows = client.get("/api/catalog/search", params={"q": "godfather", "limit": 5}).json()
+    assert rows[0]["primary_title"].startswith("The Godfather")
+    votes = [r["imdb_votes"] or 0 for r in rows]
+    assert votes[0] == max(votes)
+
+
+def test_multi_word_query_matches_a_series(client, stats):
+    rows = client.get("/api/catalog/search", params={"q": "star wars", "limit": 5}).json()
+    assert all("Star Wars" in r["primary_title"] for r in rows)
+
+
+@pytest.mark.parametrize("typo, expected", [
+    ("inceptoin", "Inception"),
+    ("godfathr", "The Godfather"),
+    ("shawshak", "The Shawshank Redemption"),
+])
+def test_typos_still_resolve(client, stats, typo, expected):
+    """Dropping the %> operator from the WHERE must not cost typo tolerance."""
+    rows = client.get("/api/catalog/search", params={"q": typo, "limit": 10}).json()
+    assert any(r["primary_title"] == expected for r in rows), f"{typo!r} lost {expected!r}"

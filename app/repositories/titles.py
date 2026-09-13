@@ -75,24 +75,60 @@ def search(
         else ""
     )
 
+    # Ranking uses word_similarity, not similarity.
+    #
+    # similarity() compares whole strings, so it punishes long titles: searching
+    # "dragon" scored a film literally called "Dragon" at 1.00 and "How to Train
+    # Your Dragon" at 0.29, burying a 900k-vote film under obscure ones. That
+    # went unnoticed until the catalog grew past 24k titles and the short
+    # matches filled the whole first page.
+    #
+    # word_similarity() scores the query against the best-matching *word* in the
+    # title, so both score 1.00 and length stops mattering. Popularity then
+    # breaks the tie, which is what a user searching one word actually wants.
+    # Weighted 70/30 so a strong text match still beats a merely popular one.
+    #
+    # The WHERE has three indexed branches, and the operator direction matters:
+    #
+    #   ilike '%q%'        substrings, exact
+    #   title % q          whole-string similarity, catches typos on short titles
+    #   q <% title         word-level similarity, catches typos on LONG titles
+    #
+    # `<%` is "the first string matches a word in the second" - `%>` is its
+    # commutator and takes the arguments the other way round. Getting that
+    # backwards silently returns nonsense ('shawshak' %> title matched "Shag"),
+    # and `%>` also cannot use the GIN index, so one wrong branch in the OR
+    # forced a sequential scan: 246 ms instead of 10 ms.
+    #
+    # Without the `<%` branch, "shawshak" misses "The Shawshank Redemption"
+    # entirely - whole-string similarity is only 0.231 against a long title,
+    # below the 0.3 threshold, while word similarity is 0.750.
+    #
     # Every optional parameter carries an explicit cast. Postgres cannot infer a
     # type from `$1 is null` on its own and raises AmbiguousParameter without it.
     sql = f"""
         select {_COLUMNS}, {_WATCHED},
                case when %(query)s::text is null then 0
-                    else similarity(t.primary_title, %(query)s::text) end as match_score
+                    else word_similarity(%(query)s::text, t.primary_title)
+               end as match_score,
+               case when %(query)s::text is null
+                    then least(ln(greatest(t.imdb_votes, 1)) / ln(3000000.0), 1.0)
+                    else word_similarity(%(query)s::text, t.primary_title) * 0.7
+                       + least(ln(greatest(t.imdb_votes, 1)) / ln(3000000.0), 1.0) * 0.3
+               end as rank_score
           from titles t
          where (%(query)s::text is null
                 or t.primary_title ilike %(pattern)s::text
                 or t.original_title ilike %(pattern)s::text
-                or t.primary_title %% %(query)s::text)
+                or t.primary_title %% %(query)s::text
+                or %(query)s::text <%% t.primary_title)
            and (%(genre)s::text is null or %(genre)s::text = any(t.genres))
            and (%(title_type)s::text is null or t.title_type = %(title_type)s::text)
            and (%(year_from)s::int is null or t.start_year >= %(year_from)s::int)
            and (%(year_to)s::int is null or t.start_year <= %(year_to)s::int)
            and (%(min_rating)s::numeric is null or t.imdb_rating >= %(min_rating)s::numeric)
            {watched_clause}
-         order by match_score desc, t.imdb_votes desc nulls last
+         order by rank_score desc, t.imdb_votes desc nulls last
          limit %(limit)s offset %(offset)s
     """
     with connection() as conn:
