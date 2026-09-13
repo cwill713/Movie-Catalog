@@ -1,5 +1,8 @@
+from uuid import UUID
+
 from fastapi import APIRouter, HTTPException
-from app import crud
+
+from app.repositories import watch_entries as crud
 from app.schemas import MovieCreate, MovieResponse, MovieDeleteRequest
 
 router = APIRouter(prefix="/api/movies", tags=["movies"])
@@ -9,8 +12,8 @@ router = APIRouter(prefix="/api/movies", tags=["movies"])
 def list_movies() -> list[MovieResponse]:
     return crud.get_movies()
 
-@router.get("/search", response_model=list[MovieResponse] | None)
-def search_movies(title: str) -> list[MovieResponse] | None:
+@router.get("/search", response_model=list[MovieResponse])
+def search_movies(title: str) -> list[MovieResponse]:
     return crud.search_movies(title)
 
 
@@ -24,7 +27,7 @@ def delete_movies(payload: MovieDeleteRequest):
     return {"deleted": deleted}
 
 @router.put("/{movie_id}", response_model=MovieResponse)
-def update_movie(movie_id: int, movie: MovieCreate) -> MovieResponse:
+def update_movie(movie_id: UUID, movie: MovieCreate) -> MovieResponse:
     result = crud.update_movie(movie_id, movie)
     if result is None:
         raise HTTPException(status_code=404, detail="Movie not found")

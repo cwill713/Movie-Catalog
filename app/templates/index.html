@@ -63,7 +63,7 @@
             <div class="card-checkbox">
                 <input type="checkbox" class="movie-cb" value="{{ movie.id }}" onchange="onCheckboxChange()">
             </div>
-            <button class="card-edit-btn" title="Edit movie" onclick="openMovieEditWindow({{ movie.id }})">
+            <button class="card-edit-btn" title="Edit movie" onclick="openMovieEditWindow('{{ movie.id }}')">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M3 21l3.4-.8L20 6.6a1.9 1.9 0 000-2.7l-.9-.9a1.9 1.9 0 00-2.7 0L3 16.6l-.8 3.4a.6.6 0 00.8.8z" stroke="#fff" stroke-width="1.6"/></svg>
             </button>
             <div class="card-overlay">

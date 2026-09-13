@@ -1,6 +1,8 @@
-from pydantic import BaseModel, Field
 from datetime import datetime
 from typing import Optional
+from uuid import UUID
+
+from pydantic import BaseModel, Field
 
 class MovieCreate(BaseModel):
     title: str = Field(min_length=1, max_length=100)
@@ -11,7 +13,9 @@ class MovieCreate(BaseModel):
     rating: float = Field(ge=0.0, le=10.0)
 
 class MovieResponse(MovieCreate):
-    id: int
+    id: UUID
+    imdb_id: Optional[str] = None
+    poster_url: Optional[str] = None
 
 class MovieDeleteRequest(BaseModel):
-    ids: list[int] = Field(min_length=1)
+    ids: list[UUID] = Field(min_length=1)

@@ -31,7 +31,7 @@ function renderMovieCard(movie, tintIndex) {
             <div class="card-checkbox">
                 <input type="checkbox" class="movie-cb" value="${movie.id}" onchange="onCheckboxChange()">
             </div>
-            <button class="card-edit-btn" title="Edit movie" onclick="openMovieEditWindow(${movie.id})">
+            <button class="card-edit-btn" title="Edit movie" onclick="openMovieEditWindow('${movie.id}')">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M3 21l3.4-.8L20 6.6a1.9 1.9 0 000-2.7l-.9-.9a1.9 1.9 0 00-2.7 0L3 16.6l-.8 3.4a.6.6 0 00.8.8z" stroke="#fff" stroke-width="1.6"/></svg>
             </button>
             <div class="card-overlay">
@@ -182,7 +182,7 @@ function showConfirmModal(message) {
 async function deleteSelectedMovies() {
     const checked = document.querySelectorAll('.movie-cb:checked');
     if (checked.length === 0) return;
-    const ids = Array.from(checked).map(cb => parseInt(cb.value));
+    const ids = Array.from(checked).map(cb => cb.value);
     const confirmed = await showConfirmModal(`Delete ${ids.length} selected movie${ids.length > 1 ? 's' : ''}?`);
     if (!confirmed) return;
     await fetch('/api/movies', {
