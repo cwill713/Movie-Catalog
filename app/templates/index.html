@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Personal Movie Catalog</title>
-    <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}?v=14">
+    <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}?v=15">
 </head>
 <body>
     <div class="top-bar">
@@ -54,6 +54,14 @@
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/></svg>
                 Add Movie
             </button>
+
+            {% if profile %}
+            <div class="account">
+                <span class="avatar">{{ profile.display_name[0] }}</span>
+                <span class="who">{{ profile.display_name }}</span>
+                <form method="post" action="/logout"><button type="submit">Sign out</button></form>
+            </div>
+            {% endif %}
         </div>
     </div>
 
