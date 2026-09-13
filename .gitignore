@@ -13,10 +13,14 @@
 !/migrations/
 !/tests/
 
-# --- Local-only notes: on disk, never pushed ---------------------------------
-# docs/ holds SPEC.md. Deliberately untracked: it names the household users and
-# the dev machine's hardware, and this repo is public.
+# --- docs/: mostly local, one file published ---------------------------------
+# SPEC.md and WORKLOG.md stay on disk - they carry personal detail and this repo
+# is public. DECISIONS.md is the exception: it is deliberately scrubbed of
+# personal data (enforced by tests/test_decisions_doc.py) and is published.
 /docs/
+!/docs/
+/docs/*
+!/docs/DECISIONS.md
 
 # --- Secrets: never track ---------------------------------------------------
 .env
