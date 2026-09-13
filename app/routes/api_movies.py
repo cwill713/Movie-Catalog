@@ -1,11 +1,13 @@
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+
+from app.auth import require_profile
 
 from app.repositories import watch_entries as crud
 from app.schemas import MovieCreate, MovieResponse, MovieDeleteRequest
 
-router = APIRouter(prefix="/api/movies", tags=["movies"])
+router = APIRouter(prefix="/api/movies", tags=["movies"], dependencies=[Depends(require_profile)])
 
 
 @router.get("", response_model=list[MovieResponse])

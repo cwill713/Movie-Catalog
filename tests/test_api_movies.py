@@ -7,15 +7,6 @@ at which point these get a proper throwaway test database.
 """
 
 import pytest
-from fastapi.testclient import TestClient
-
-from app.main import app
-
-
-@pytest.fixture(scope="module")
-def client():
-    with TestClient(app) as c:
-        yield c
 
 
 def test_list_movies_returns_a_list(client):

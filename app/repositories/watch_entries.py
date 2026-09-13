@@ -13,7 +13,7 @@ frontend keeps working.
 from typing import Any
 from uuid import UUID
 
-from app.db import DEFAULT_HOUSEHOLD_ID, DEFAULT_PROFILE_ID, connection
+from app.db import connection, require_context
 from app.schemas import MovieCreate
 
 # The display shape the API returns, resolved across catalog and manual columns.
@@ -52,11 +52,8 @@ def _row_to_movie(row: dict[str, Any]) -> dict[str, Any]:
 
 
 def _params(**extra: Any) -> dict[str, Any]:
-    return {
-        "household_id": DEFAULT_HOUSEHOLD_ID,
-        "profile_id": DEFAULT_PROFILE_ID,
-        **extra,
-    }
+    profile_id, household_id = require_context()
+    return {"household_id": household_id, "profile_id": profile_id, **extra}
 
 
 def _genres(movie: MovieCreate) -> list[str]:
@@ -92,6 +89,7 @@ def search_movies(title: str) -> list[dict[str, Any]]:
 
 def create_movie(movie: MovieCreate) -> dict[str, Any]:
     """Create the entry and this profile's rating together, or neither."""
+    params = _params(title=movie.title, year=movie.year, genres=_genres(movie))
     with connection() as conn:
         with conn.transaction():
             row = conn.execute(
@@ -99,18 +97,19 @@ def create_movie(movie: MovieCreate) -> dict[str, Any]:
                        (household_id, manual_title, manual_year, manual_genres, added_by)
                    values (%(household_id)s, %(title)s, %(year)s, %(genres)s, %(profile_id)s)
                    returning id""",
-                _params(title=movie.title, year=movie.year, genres=_genres(movie)),
+                params,
             ).fetchone()
             entry_id = row["id"]
             conn.execute(
                 """insert into entry_ratings (entry_id, profile_id, rating)
                    values (%s, %s, %s)""",
-                (entry_id, DEFAULT_PROFILE_ID, movie.rating),
+                (entry_id, params["profile_id"], movie.rating),
             )
     return {"id": entry_id, **movie.model_dump()}
 
 
 def update_movie(movie_id: UUID, movie: MovieCreate) -> dict[str, Any] | None:
+    params = _params(id=movie_id, title=movie.title, year=movie.year, genres=_genres(movie))
     with connection() as conn:
         with conn.transaction():
             updated = conn.execute(
@@ -120,12 +119,7 @@ def update_movie(movie_id: UUID, movie: MovieCreate) -> dict[str, Any] | None:
                           manual_genres = %(genres)s
                     where id = %(id)s and household_id = %(household_id)s
                     returning id""",
-                _params(
-                    id=movie_id,
-                    title=movie.title,
-                    year=movie.year,
-                    genres=_genres(movie),
-                ),
+                params,
             ).fetchone()
             if updated is None:
                 return None
@@ -134,7 +128,7 @@ def update_movie(movie_id: UUID, movie: MovieCreate) -> dict[str, Any] | None:
                    values (%s, %s, %s)
                    on conflict (entry_id, profile_id)
                    do update set rating = excluded.rating""",
-                (movie_id, DEFAULT_PROFILE_ID, movie.rating),
+                (movie_id, params["profile_id"], movie.rating),
             )
     return {"id": movie_id, **movie.model_dump()}
 
