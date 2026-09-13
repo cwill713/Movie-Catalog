@@ -49,3 +49,15 @@ def catalog(request: Request):
         name="catalog.html",
         context={"total": stats["total"], "genres": titles_repo.genres()},
     )
+
+
+@router.get("/title/{imdb_id}")
+def title_detail(request: Request, imdb_id: str):
+    title = titles_repo.get(imdb_id)
+    if title is None:
+        raise HTTPException(status_code=404, detail="Title not found")
+    return templates.TemplateResponse(
+        request=request,
+        name="title_detail.html",
+        context={"title": title, "ratings": titles_repo.ratings_for(imdb_id)},
+    )

@@ -126,3 +126,58 @@ def test_catalog_page_renders(client, stats):
     response = client.get("/catalog")
     assert response.status_code == 200
     assert "text/html" in response.headers["content-type"]
+
+
+# --- Phase 4: enrichment ---------------------------------------------------
+
+def test_catalog_is_enriched(client, stats):
+    """Nearly every title should have OMDb data after enrichment."""
+    assert stats["enriched"] / stats["total"] > 0.95
+
+
+def test_search_results_carry_posters_and_plots(client, stats):
+    rows = client.get("/api/catalog/search", params={"limit": 40}).json()
+    assert sum(1 for r in rows if r["poster_url"]) / len(rows) > 0.9
+    assert sum(1 for r in rows if r["plot"]) / len(rows) > 0.9
+
+
+def test_poster_urls_are_absolute_https(client, stats):
+    """The template drops the img on error; a bad scheme would fail silently."""
+    rows = client.get("/api/catalog/search", params={"limit": 40}).json()
+    for r in rows:
+        if r["poster_url"]:
+            assert r["poster_url"].startswith("http"), r["poster_url"]
+
+
+def test_critic_scores_are_in_range(client, stats):
+    rows = client.get("/api/catalog/search", params={"limit": 60}).json()
+    for r in rows:
+        if r["rt_score"] is not None:
+            assert 0 <= r["rt_score"] <= 100
+        if r["metascore"] is not None:
+            assert 0 <= r["metascore"] <= 100
+
+
+def test_title_detail_page_renders(client, stats):
+    known = client.get("/api/catalog/search", params={"limit": 1}).json()[0]
+    response = client.get(f"/title/{known['imdb_id']}")
+    assert response.status_code == 200
+    assert known["primary_title"] in response.text
+
+
+def test_title_detail_shows_our_rating(client, stats):
+    """A title we've watched should surface the household's score."""
+    watched = [
+        r for r in client.get(
+            "/api/catalog/search", params={"q": "dragon", "limit": 60}
+        ).json() if r["watched"]
+    ]
+    if not watched:
+        pytest.skip("no linked watch entries")
+    response = client.get(f"/title/{watched[0]['imdb_id']}")
+    assert response.status_code == 200
+    assert "What we thought" in response.text
+
+
+def test_title_detail_404s_for_unknown(client, stats):
+    assert client.get("/title/tt00000000").status_code == 404

@@ -146,3 +146,21 @@ def link_watch_entry(entry_id: UUID, imdb_id: str) -> bool:
             (imdb_id, entry_id, DEFAULT_HOUSEHOLD_ID),
         )
         return cur.rowcount > 0
+
+
+def ratings_for(imdb_id: str) -> list[dict[str, Any]]:
+    """Each household member's rating and review for a title, if any."""
+    with connection() as conn:
+        rows = conn.execute(
+            """select p.display_name, er.rating, er.review
+                 from watch_entries we
+                 join entry_ratings er on er.entry_id = we.id
+                 join profiles p on p.id = er.profile_id
+                where we.household_id = %s and we.imdb_id = %s
+                order by p.display_name""",
+            (DEFAULT_HOUSEHOLD_ID, imdb_id),
+        ).fetchall()
+    return [
+        {**r, "rating": float(r["rating"]) if r["rating"] is not None else None}
+        for r in rows
+    ]

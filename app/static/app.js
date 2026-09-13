@@ -28,6 +28,7 @@ function renderMovieCard(movie, tintIndex) {
                     <path d="M3 7l3-4h4l-3 4M10 7l3-4h4l-3 4M17 7l3-4h2l-3 4M3 7h18v13a1 1 0 01-1 1H4a1 1 0 01-1-1V7z" stroke="#fff" stroke-width="1.4"/>
                 </svg>
             </div>
+            ${movie.poster_url ? `<img class="poster-img" src="${movie.poster_url}" alt="${movie.title} poster" loading="lazy" onerror="this.remove()">` : ''}
             <div class="card-checkbox">
                 <input type="checkbox" class="movie-cb" value="${movie.id}" onchange="onCheckboxChange()">
             </div>
@@ -40,7 +41,7 @@ function renderMovieCard(movie, tintIndex) {
                     <span class="rating">${movie.rating.toFixed(1)}</span>
                     <span class="year">${movie.year}</span>
                 </div>
-                <div class="card-title">${movie.title}</div>
+                <div class="card-title">${movie.imdb_id ? `<a href="/title/${movie.imdb_id}" style="color:inherit;text-decoration:none">${movie.title}</a>` : movie.title}</div>
                 <div class="card-genres">${genrePills}</div>
             </div>
         </div>`;
