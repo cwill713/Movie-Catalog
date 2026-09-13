@@ -31,6 +31,8 @@ changes to **Superseded** and a new entry explains what replaced it.
 | [011](#adr-011) | Bulk-load the catalog with COPY into a staging table | Accepted |
 | [012](#adr-012) | Catalog depth chosen by measurement, not estimate | Accepted |
 | [013](#adr-013) | Rank search by word similarity, not string similarity | Accepted |
+| [014](#adr-014) | Row-level security via a non-owner role | Accepted |
+| [015](#adr-015) | Credential handling, and HTTPS before deployment | Accepted |
 
 ---
 
@@ -597,3 +599,136 @@ oriented, indexable operator, not dropping the feature.
 
 **Revisit if.** Search quality complaints. The 70/30 split is a guess that
 behaves well, not a measured optimum.
+
+
+---
+
+## ADR-014
+
+### Enforce row-level security through a non-owner role
+
+**Status:** Accepted · 2026-09-13
+
+**Context.** The app needs per-household data isolation. Postgres row-level
+security is the obvious mechanism, and the plan assumed writing policies would
+be enough.
+
+It would not have been. The application connects as `postgres`, which **owns
+every table and has `rolbypassrls = true`**. Postgres skips RLS entirely for a
+table's owner. Policies written without addressing that would have passed
+review, looked correct in the migration, and enforced nothing - with no error,
+no warning, and no visible symptom. Every household would have seen everything.
+
+**This is the failure mode worth naming: RLS is silent when it does not apply.**
+
+**Decision.** Keep the direct SQL connection, but switch role per request.
+
+Supabase provides an `authenticated` role that does not bypass RLS and that
+`postgres` is permitted to `SET ROLE` to. Every request runs:
+
+```sql
+set local role authenticated;
+set local app.current_profile_id = '<uuid>';
+```
+
+`SET LOCAL` is scoped to the **transaction**, not the session. That matters
+because connections are pooled: session-scoped settings would leave one
+request's identity on the connection for the next borrower to inherit.
+
+Admin scripts (ingest, enrichment, embeddings) call `admin_connection()` and
+stay as `postgres` deliberately - they maintain the shared catalog and have no
+user context.
+
+**Alternatives rejected.**
+
+*Application-level scoping only* (every query carries `household_id`). Already
+in place and still there as belt-and-braces, but it puts the entire security
+boundary in application code, where one forgotten `WHERE` is a silent leak.
+
+*Routing reads through PostgREST with the user's JWT.* RLS would apply
+automatically, but it abandons the hand-written SQL that ADR-003 exists to
+preserve.
+
+**Consequences.**
+- Policies genuinely enforce. Demonstrated: an unscoped `UPDATE` or `DELETE`
+  from one household reaches only its own rows, and an `INSERT` into another
+  household is refused outright.
+- `USING` governs reads and which rows a write may touch; `WITH CHECK` governs
+  what may be written. Both are needed - `USING` alone would permit inserting a
+  row you then could not see.
+- `app_current_household()` must be `SECURITY DEFINER`: it reads `profiles`,
+  which is itself behind RLS, and would otherwise recurse through its own
+  policy forever.
+- Ratings and tags split read from write: the household's scores are readable,
+  because that is what makes a joint recommendation possible, but only the
+  owner may edit their own.
+- **The `authenticated` role is shared between users.** Separation comes from
+  the session setting, not the role, so the boundary ultimately rests on
+  `app/auth.py` setting the profile id only from a verified token. The database
+  enforces what it is told; it cannot verify who you are.
+- A fourth guard sits above the database: `require_context()` raises when no
+  identity is in scope, so a route missing its auth dependency fails loudly
+  rather than running as nobody.
+
+**Revisit if.** Supabase ever permits creating and assuming a bespoke role, in
+which case a dedicated role per application would be marginally tidier.
+
+---
+
+## ADR-015
+
+### Credential handling, and HTTPS as a deployment prerequisite
+
+**Status:** Accepted · 2026-09-13
+
+**Context.** The app has its own sign-in form rather than redirecting to a
+hosted page, so credentials pass through it.
+
+**How passwords are stored.** They are not. Supabase stores a **bcrypt hash**,
+per-user salted, at cost factor 10:
+
+```
+$2a$10$Vv65goLVbvSTVdJ8NpIF9OrgukPkyNJG4MIZCjBE2FMFp2BuE3LvC
+ |   |  \---- 22-char salt ----/\-------- hash --------/
+ |   \- cost factor: 2^10 iterations
+ \- bcrypt
+```
+
+The column is named `encrypted_password`, which is misleading - hashing is
+one-way and has no key, so a database dump does not yield plaintext. Nobody,
+including us, can recover a password; it can only be reset. The per-user salt
+means two accounts with the same password store different values.
+
+**Decision.**
+
+1. The app never stores, logs, or persists a plaintext password. It exists only
+   in memory for the moment it is forwarded to Supabase's token endpoint.
+2. Passwords never appear in a URL or as a command-line argument.
+   `scripts/create_user.py` prompts via `getpass` specifically so they stay out
+   of shell history.
+3. The session cookie is `httpOnly` (unreadable from JavaScript) and
+   `SameSite=Lax`.
+4. **HTTPS is a hard prerequisite for deployment.** Locally the form posts over
+   plain HTTP, which is acceptable only because `127.0.0.1` never leaves the
+   machine. Over the public internet, HTTP means anyone on the path reads the
+   password in clear text.
+
+**Deployment checklist - Phase 10 must not ship without all of these:**
+
+- [ ] TLS terminated in front of the app; plain HTTP redirected to HTTPS
+- [ ] `ENVIRONMENT` set to something other than `local`, so the session cookie
+      becomes `Secure` (the code already keys off this)
+- [ ] HSTS header set
+- [ ] Verify `secure=True` on the cookie in the deployed response, rather than
+      assuming the environment variable took effect
+
+**Consequences.**
+- Owning the sign-in form is a small, permanent responsibility. Redirecting to
+  Supabase's hosted page would remove it, at the cost of a worse experience.
+- The hop that actually crosses the internet - this app to Supabase - is
+  already HTTPS. The gap is only between browser and app, and only once
+  deployed.
+
+**Revisit if.** The app ever needs to be reachable from outside the local
+machine before Phase 10. That is the point at which HTTPS stops being a
+checklist item and becomes blocking.
