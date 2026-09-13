@@ -29,7 +29,8 @@ changes to **Superseded** and a new entry explains what replaced it.
 | [009](#adr-009) | Archive untracked files rather than delete | Accepted |
 | [010](#adr-010) | Split docs between a public and a private repo | Accepted |
 | [011](#adr-011) | Bulk-load the catalog with COPY into a staging table | Accepted |
-| [012](#adr-012) | Catalog depth chosen by measurement, not estimate | Open |
+| [012](#adr-012) | Catalog depth chosen by measurement, not estimate | Accepted |
+| [013](#adr-013) | Rank search by word similarity, not string similarity | Accepted |
 
 ---
 
@@ -487,7 +488,7 @@ the full 1.7M.
 
 ### Catalog depth chosen by measurement, not estimate
 
-**Status:** ⚠️ **Open** — loaded at 5,000 votes; deeper is affordable
+**Status:** Accepted · 2026-09-13 — settled at **2,500 votes / 37,605 titles**
 
 **Context.** Catalog size is capped by the database's 500 MB limit. Planning
 estimated ~137 MB for 24k titles fully loaded, which implied 24k was near the
@@ -518,8 +519,15 @@ HNSW index) at roughly 5.2 KB per title:
 | 1,000 | 65,166 | 47 MB | 328 MB |
 | 500 | 95,374 | 68 MB | 481 MB ✗ |
 
-**Open question.** 65,166 titles at ~1,000 votes looks affordable, which was
-not the expectation going in.
+**Resolved.** Enrichment supplied the missing number: plot text averages **486
+characters**, not the 1,400 estimated. A title costs ~1,677 bytes enriched, so
+~4.8 KB once a vector and its index are added.
+
+Settled on **>=2,500 votes -> 37,605 titles**, over the more aggressive >=1,000
+(65,166, ~62% of the tier). Currently 84 MB / 17%; projected ~196 MB / 39% once
+embeddings land. The deeper tier was affordable but left little room for an HNSW
+rebuild or a second embedding model, and >=2,500 already triples the per-year
+depth of the original >=5,000.
 
 **The one number still unknown** is how large OMDb plot text actually is; 1.4 KB
 per title is a guess, and it is the largest uncertain term. That figure lands in
@@ -529,4 +537,63 @@ Because structured rows are so cheap (47 MB for 65k), loading deep and enriching
 shallow is available as a middle path: every title becomes searchable and
 filterable, while only the most popular tier gets prose and embeddings.
 
-**Revisit.** In Phase 4, once real plot sizes are measured.
+**Revisit if.** The recommender feels like it only knows obvious titles.
+Re-ingesting is ~4 seconds, enrichment resumes automatically, and both scripts
+are idempotent - so going deeper later costs only the new titles.
+
+
+---
+
+## ADR-013
+
+### Rank search by word similarity, not whole-string similarity
+
+**Status:** Accepted · 2026-09-13
+
+**Context.** Catalog search ranked by `similarity(primary_title, query)`, which
+compares whole strings and therefore penalises long titles. Searching `dragon`
+scored a film literally called *Dragon* at 1.00 and *How to Train Your Dragon*
+- 908,000 votes against 19,000 - at 0.29.
+
+This looked fine at 24,213 titles. At 37,605 there were enough short matches to
+fill the entire first page, and the popular title left the top 60 altogether.
+**The bug was always there; more data exposed it.**
+
+**Decision.** Rank by a blend of `word_similarity(query, primary_title)` and a
+log-normalised vote count, weighted 70/30.
+
+`word_similarity` scores the query against the best-matching *word* in the
+title, so length stops mattering and every title containing the word scores
+1.00. Popularity then orders them, which is what someone typing one word wants.
+
+**Two traps, both hit while implementing this.**
+
+*Operator direction.* `a <% b` means "a matches a word inside b". `%>` is its
+commutator and takes the arguments the other way round. Using `%>` by mistake
+silently returned nonsense - `'shawshak' %> primary_title` matched *Shag*
+rather than *The Shawshank Redemption*. No error, just wrong results.
+
+*Index support.* `%>` cannot use the GIN trigram index, and **one unindexable
+branch in an `OR` forces a sequential scan of the whole table** - 246 ms against
+10 ms. `<%` is indexable, so the final `WHERE` is three indexed branches under a
+BitmapOr: `ilike` for substrings, `%` for typos on short titles, and `<%` for
+typos on long ones.
+
+That third branch earns its place: `shawshak` scores only 0.231 whole-string
+similarity against *The Shawshank Redemption* - under the 0.3 threshold - but
+0.750 word similarity. Without it, that search returns nothing at all.
+
+An intermediate "fix" that simply deleted the word-similarity branch restored
+the speed and quietly lost that capability. The right answer was the correctly
+oriented, indexable operator, not dropping the feature.
+
+**Consequences.**
+- Search is 8 ms server-side; the latency a user perceives is network
+  round-trip to a hosted database, not query time.
+- The 70/30 weighting is a tuning knob, and the same shape of problem returns
+  in the recommender, which blends semantic distance with a quality prior.
+- Regression tests cover the exact case that broke, plus typo resolution and
+  popularity ordering.
+
+**Revisit if.** Search quality complaints. The 70/30 split is a guess that
+behaves well, not a measured optimum.
