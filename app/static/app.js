@@ -1,43 +1,77 @@
 const searchMovieInput = document.getElementById('search-title');
 const searchMovieForm = document.getElementById('search-title-form');
+const movieGrid = document.getElementById('movie-grid');
+const sortSelect = document.getElementById('sort-select');
+const sortDirectionBtn = document.getElementById('sort-direction-btn');
+const bulkBar = document.getElementById('bulk-bar');
+const bulkBarCount = document.getElementById('bulk-bar-count');
 
 let currentSortColumn = null;
-let currentSortDirection = null; // 'asc' or 'desc'
+let currentSortDirection = 'asc'; // 'asc' or 'desc'
 
 const sortConfig = {
-    title:      { type: 'alpha', index: 1 },
-    year:       { type: 'num',   index: 2 },
-    genre_one:  { type: 'alpha', index: 3 },
-    genre_two:  { type: 'alpha', index: 4 },
-    genre_three:{ type: 'alpha', index: 5 },
-    rating:     { type: 'num',   index: 6 },
+    title:  { type: 'alpha' },
+    year:   { type: 'num' },
+    rating: { type: 'num' },
 };
 
-function sortTable(column) {
-    if (currentSortColumn === column) {
-        if (currentSortDirection === 'asc') {
-            currentSortDirection = 'desc';
-        } else {
-            currentSortColumn = null;
-            currentSortDirection = null;
-            updateSortArrows();
-            loadMovieData();
-            return;
-        }
-    } else {
-        currentSortColumn = column;
-        currentSortDirection = 'asc';
+function renderMovieCard(movie, tintIndex) {
+    const genrePills = [movie.genre_one, movie.genre_two, movie.genre_three]
+        .filter(Boolean)
+        .map(g => `<span class="genre-pill">${g}</span>`)
+        .join('');
+
+    return `
+        <div class="poster-card" data-id="${movie.id}" data-title="${movie.title}" data-year="${movie.year}" data-rating="${movie.rating}">
+            <div class="poster-icon-bg poster-tint-${tintIndex % 5}" style="position:absolute; inset:0;">
+                <svg class="poster-icon" width="56" height="56" viewBox="0 0 24 24" fill="none">
+                    <path d="M3 7l3-4h4l-3 4M10 7l3-4h4l-3 4M17 7l3-4h2l-3 4M3 7h18v13a1 1 0 01-1 1H4a1 1 0 01-1-1V7z" stroke="#fff" stroke-width="1.4"/>
+                </svg>
+            </div>
+            <div class="card-checkbox">
+                <input type="checkbox" class="movie-cb" value="${movie.id}" onchange="onCheckboxChange()">
+            </div>
+            <button class="card-edit-btn" title="Edit movie" onclick="openMovieEditWindow(${movie.id})">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M3 21l3.4-.8L20 6.6a1.9 1.9 0 000-2.7l-.9-.9a1.9 1.9 0 00-2.7 0L3 16.6l-.8 3.4a.6.6 0 00.8.8z" stroke="#fff" stroke-width="1.6"/></svg>
+            </button>
+            <div class="card-overlay">
+                <div class="card-meta">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="#ffd54a"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 21 12 17.77 5.82 21 7 14.14l-5-4.87 6.91-1.01z"/></svg>
+                    <span class="rating">${movie.rating.toFixed(1)}</span>
+                    <span class="year">${movie.year}</span>
+                </div>
+                <div class="card-title">${movie.title}</div>
+                <div class="card-genres">${genrePills}</div>
+            </div>
+        </div>`;
+}
+
+function renderMovieGrid(movies, emptyMessage) {
+    if (!movies || movies.length === 0) {
+        movieGrid.innerHTML = `<div class="empty-state">${emptyMessage}</div>`;
+        return;
     }
+    movieGrid.innerHTML = movies.map((movie, i) => renderMovieCard(movie, i)).join('');
+    if (currentSortColumn) {
+        applySort();
+    }
+    onCheckboxChange();
+}
 
-    const tableBody = document.querySelector('#movie-grid-table tbody');
-    const rows = Array.from(tableBody.querySelectorAll('tr'));
-    if (rows.length === 0 || rows[0].querySelector('td[colspan]')) return;
+async function loadMovieData() {
+    const response = await fetch('/api/movies');
+    const movies = await response.json();
+    renderMovieGrid(movies, 'There is no current data');
+}
 
-    const cfg = sortConfig[column];
-    rows.sort((a, b) => {
-        const aVal = a.children[cfg.index].textContent.trim();
-        const bVal = b.children[cfg.index].textContent.trim();
+function applySort() {
+    const cards = Array.from(movieGrid.querySelectorAll('.poster-card'));
+    if (cards.length === 0) return;
 
+    const cfg = sortConfig[currentSortColumn];
+    cards.sort((a, b) => {
+        const aVal = a.dataset[currentSortColumn];
+        const bVal = b.dataset[currentSortColumn];
         let cmp;
         if (cfg.type === 'num') {
             cmp = parseFloat(aVal) - parseFloat(bVal);
@@ -47,20 +81,32 @@ function sortTable(column) {
         return currentSortDirection === 'asc' ? cmp : -cmp;
     });
 
-    rows.forEach(row => tableBody.appendChild(row));
-    updateSortArrows();
+    cards.forEach(card => movieGrid.appendChild(card));
 }
 
-function updateSortArrows() {
-    document.querySelectorAll('#movie-grid-table th[data-sort]').forEach(th => {
-        const arrow = th.querySelector('.sort-arrow');
-        if (th.dataset.sort === currentSortColumn) {
-            arrow.textContent = currentSortDirection === 'asc' ? ' \u25B2' : ' \u25BC';
-        } else {
-            arrow.textContent = '';
-        }
-    });
+function onSortChange() {
+    currentSortColumn = sortSelect.value || null;
+    if (currentSortColumn) {
+        applySort();
+    } else {
+        loadMovieData();
+    }
 }
+
+function toggleSortDirection() {
+    currentSortDirection = currentSortDirection === 'asc' ? 'desc' : 'asc';
+    sortDirectionBtn.classList.toggle('desc', currentSortDirection === 'desc');
+    if (currentSortColumn) {
+        applySort();
+    }
+}
+
+searchMovieInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        searchMovieForm.requestSubmit();
+    }
+});
 
 searchMovieForm.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -68,43 +114,15 @@ searchMovieForm.addEventListener('submit', async (e) => {
     if (query) {
         const response = await fetch(`/api/movies/search?title=${encodeURIComponent(query)}`);
         const movies = await response.json();
-        updateMovieGrid(movies);
+        renderMovieGrid(movies, 'No movies found matching your search.');
     }
 });
 
 searchMovieForm.addEventListener('reset', (event) => {
-            event.preventDefault();
-            searchMovieInput.value = '';
-            loadMovieData();
-        });
-
-async function loadMovieData() {
-    const response = await fetch('/api/movies');
-    const movies = await response.json();
-
-    const tableBody = document.querySelector('#movie-grid-table tbody');
-    tableBody.innerHTML = '';
-    if (movies.length === 0) {
-        const row = document.createElement('tr');
-        row.innerHTML = '<td colspan="8" style="text-align:center; color:#999; font-style:italic; padding:2rem;">There is no current data</td>';
-        tableBody.appendChild(row);
-        return;
-    }
-    movies.forEach(movie => {
-        const row = document.createElement('tr');
-        row.innerHTML = `<td class="checkbox-col"><input type="checkbox" class="movie-cb" value="${movie.id}" onchange="onCheckboxChange()"></td>
-                <td>${movie.title}</td>
-                <td>${movie.year}</td>
-                <td>${movie.genre_one}</td>
-                <td>${movie.genre_two || ''}</td>
-                <td>${movie.genre_three || ''}</td>
-                <td>${movie.rating.toFixed(1)}</td>
-                <td class="edit-col"><button class="edit-btn" title="Edit movie"></button></td>`;
-        row.querySelector('.edit-btn').addEventListener('click', () => openMovieEditWindow(movie.id));
-        tableBody.appendChild(row);
-    });
-    onCheckboxChange();
-}
+    event.preventDefault();
+    searchMovieInput.value = '';
+    loadMovieData();
+});
 
 function openMovieInputWindow() {
     window.open('/movie-input', '_blank', 'width=750,height=480,resizable=yes,scrollbars=no');
@@ -112,32 +130,6 @@ function openMovieInputWindow() {
 
 function openMovieEditWindow(movieId) {
     window.open(`/movie-edit/${movieId}`, '_blank', 'width=750,height=480,resizable=yes,scrollbars=no');
-}
-
-function updateMovieGrid(movies) {
-    const tableBody = document.querySelector('#movie-grid-table tbody');
-    tableBody.innerHTML = '';
-    if (!movies || movies.length === 0) {
-        const row = document.createElement('tr');
-        row.innerHTML = '<td colspan="8" style="text-align:center; color:#999; font-style:italic; padding:2rem;">No movies found matching your search.</td>';
-        tableBody.appendChild(row);
-        return;
-    }
-
-    movies.forEach(movie => {
-        const row = document.createElement('tr');
-        row.innerHTML = `<td class="checkbox-col"><input type="checkbox" class="movie-cb" value="${movie.id}" onchange="onCheckboxChange()"></td>
-                <td>${movie.title}</td>
-                <td>${movie.year}</td>
-                <td>${movie.genre_one}</td>
-                <td>${movie.genre_two || ''}</td>
-                <td>${movie.genre_three || ''}</td>
-                <td>${movie.rating.toFixed(1)}</td>
-                <td class="edit-col"><button class="edit-btn" title="Edit movie"></button></td>`;
-        row.querySelector('.edit-btn').addEventListener('click', () => openMovieEditWindow(movie.id));
-        tableBody.appendChild(row);
-    });
-    onCheckboxChange();
 }
 
 function toggleSelectAll(source) {
@@ -148,9 +140,18 @@ function toggleSelectAll(source) {
 function onCheckboxChange() {
     const checkboxes = document.querySelectorAll('.movie-cb');
     const checked = document.querySelectorAll('.movie-cb:checked');
-    const deleteBtn = document.getElementById('delete-selected-btn');
     const selectAllCb = document.getElementById('select-all-cb');
-    if (deleteBtn) deleteBtn.disabled = checked.length === 0;
+
+    checkboxes.forEach(cb => {
+        const card = cb.closest('.poster-card');
+        if (card) card.classList.toggle('selected', cb.checked);
+    });
+
+    if (bulkBar) {
+        bulkBar.classList.toggle('visible', checked.length > 0);
+        bulkBarCount.textContent = `${checked.length} selected`;
+    }
+
     if (selectAllCb) {
         selectAllCb.checked = checkboxes.length > 0 && checked.length === checkboxes.length;
         selectAllCb.indeterminate = checked.length > 0 && checked.length < checkboxes.length;
