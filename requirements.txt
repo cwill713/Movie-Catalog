@@ -1,5 +1,10 @@
-fastapi
-uvicorn
-pydantic
-datetime
-jinja2
+# Runtime
+fastapi==0.135.3
+uvicorn[standard]==0.44.0
+jinja2==3.1.6
+pydantic==2.12.5
+pydantic-settings==2.7.1
+httpx2==2.12.0          # HTTP client; also what starlette's TestClient wants
+
+# Dev / test
+pytest==8.3.4

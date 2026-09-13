@@ -1,16 +1,46 @@
-# Ignore everything at the root level
+# This repo is PUBLIC (github.com/cwill713/Movie-Catalog).
+# Strategy: ignore everything at the repo root, then explicitly allow what we track.
 /*
 
-# Keep only these
+# --- Tracked at root --------------------------------------------------------
 !.gitignore
 !/README.md
 !/requirements.txt
+!/pytest.ini
+!/.env.example
 !/app/
+!/scripts/
+!/migrations/
+!/tests/
 
-# Inside app/, ignore generated/runtime files
-app/__pycache__/
-app/**/__pycache__/
-app/*.db
-app/*.sqlite
-app/*.sqlite3
-app/**/*.pyc
+# --- Local-only notes: on disk, never pushed ---------------------------------
+# docs/ holds SPEC.md. Deliberately untracked: it names the household users and
+# the dev machine's hardware, and this repo is public.
+/docs/
+
+# --- Secrets: never track ---------------------------------------------------
+.env
+.env.*
+!.env.example
+/API_KEYS.txt
+
+# --- IMDb non-commercial datasets -------------------------------------------
+# Licensed for personal, non-commercial use only. Redistribution is prohibited,
+# and this repository is public. The dumps and anything derived from them must
+# never be committed. We commit scripts/ingest_imdb.py, never the data.
+/data/
+*.tsv
+*.tsv.gz
+
+# --- Databases --------------------------------------------------------------
+*.db
+*.sqlite
+*.sqlite3
+
+# --- Python runtime ---------------------------------------------------------
+.venv/
+venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+.pytest_cache/
