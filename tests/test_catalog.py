@@ -223,3 +223,54 @@ def test_typos_still_resolve(client, stats, typo, expected):
     """Dropping the %> operator from the WHERE must not cost typo tolerance."""
     rows = client.get("/api/catalog/search", params={"q": typo, "limit": 10}).json()
     assert any(r["primary_title"] == expected for r in rows), f"{typo!r} lost {expected!r}"
+
+
+# --- search precision ------------------------------------------------------
+#
+# Reported from the browse page: searching "hobbit" was acceptable, but
+# "the hobbit" returned 103 results - The Hole, The Hoax, The Help, The Hit and
+# every other "The Ho..." title. Adding a word made results *worse*.
+#
+# Cause: a `primary_title % query` branch using whole-string similarity at a
+# 0.3 threshold. "the hobbit" scores 0.429 against "The Hole" purely on the
+# shared trigrams in "the ho". Removed; `<%` word similarity covers typos
+# without that imprecision.
+
+def test_multiword_query_is_not_flooded_by_common_prefixes(client, stats):
+    rows = client.get(
+        "/api/catalog/search", params={"q": "the hobbit", "limit": 200}
+    ).json()
+    assert len(rows) < 15, f"{len(rows)} results for 'the hobbit' - too loose"
+    titles = [r["primary_title"] for r in rows]
+    for junk in ("The Hole", "The Hoax", "The Help", "The Hit", "The Hunt"):
+        assert junk not in titles, f"{junk!r} matched 'the hobbit'"
+
+
+def test_adding_a_word_does_not_widen_results(client, stats):
+    """The symptom that made this obvious: more words should narrow, not widen."""
+    one = client.get("/api/catalog/search", params={"q": "hobbit", "limit": 200}).json()
+    two = client.get("/api/catalog/search", params={"q": "the hobbit", "limit": 200}).json()
+    assert len(two) <= len(one) + 2, (
+        f"'the hobbit' returned {len(two)} vs {len(one)} for 'hobbit' - "
+        "a longer query is matching more loosely"
+    )
+
+
+@pytest.mark.parametrize("query, expected_top", [
+    ("hobbit", "The Hobbit"),
+    ("the hobbit", "The Hobbit"),
+    ("the lord of the rings", "The Lord of the Rings"),
+])
+def test_franchise_titles_lead_their_own_search(client, stats, query, expected_top):
+    rows = client.get("/api/catalog/search", params={"q": query, "limit": 5}).json()
+    assert rows, f"no results for {query!r}"
+    assert rows[0]["primary_title"].startswith(expected_top), (
+        f"{query!r} returned {rows[0]['primary_title']!r} first"
+    )
+
+
+def test_typo_search_is_precise_not_just_present(client, stats):
+    """A typo should resolve to one title, not a pile of near-misses."""
+    rows = client.get("/api/catalog/search", params={"q": "shawshak", "limit": 20}).json()
+    assert rows[0]["primary_title"] == "The Shawshank Redemption"
+    assert len(rows) <= 3, f"{[r['primary_title'] for r in rows]}"
