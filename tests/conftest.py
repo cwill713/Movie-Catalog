@@ -14,7 +14,6 @@ expiry - is covered separately in test_auth.py.
 import pytest
 from fastapi.testclient import TestClient
 
-from app.auth import current_profile, require_profile
 from app.config import get_settings
 from app.db import (
     DEFAULT_HOUSEHOLD_ID,
@@ -54,40 +53,62 @@ def test_profile():
 
 
 @pytest.fixture(autouse=True)
-def rls_context(request, test_profile):
-    """Bind the identity for the duration of each test.
+def clean_context():
+    """Start every test with NO identity bound.
 
-    autouse so repository-level tests get RLS context without asking. Tests
-    that deliberately want *no* identity mark themselves with
-    @pytest.mark.no_identity.
+    This is autouse and deliberately does not set an identity. An earlier
+    version bound the seeded profile here, which silently masked a real bug:
+    the app bound identity inside a FastAPI dependency, where it never reached
+    the endpoint, and every authenticated page 500'd in the browser while the
+    whole suite stayed green. The fixture was supplying out of band exactly what
+    the app failed to supply.
+
+    HTTP tests must now get their identity from the real middleware. Tests that
+    call repositories directly ask for `as_profile`.
     """
-    if "no_identity" in request.keywords:
-        current_profile_id.set(None)
-        current_household_id.set(None)
-        yield
-        return
-
-    token_p = current_profile_id.set(test_profile["id"])
-    token_h = current_household_id.set(test_profile["household_id"])
+    current_profile_id.set(None)
+    current_household_id.set(None)
     yield
-    current_profile_id.reset(token_p)
-    current_household_id.reset(token_h)
+    current_profile_id.set(None)
+    current_household_id.set(None)
+
+
+@pytest.fixture
+def as_profile(test_profile):
+    """Bind the seeded profile, for tests that call repositories directly."""
+    current_profile_id.set(test_profile["id"])
+    current_household_id.set(test_profile["household_id"])
+    yield test_profile
+    current_profile_id.set(None)
+    current_household_id.set(None)
 
 
 @pytest.fixture(scope="session")
 def client(test_profile):
-    """A TestClient that is always signed in as the seeded profile."""
+    """A TestClient signed in as the seeded profile.
 
-    def _profile():
-        current_profile_id.set(test_profile["id"])
-        current_household_id.set(test_profile["household_id"])
-        return dict(test_profile)
+    Patches `resolve_profile` - the function the middleware calls - rather than
+    overriding the route dependencies. That is deliberate: it means requests go
+    through the REAL middleware, which is what binds identity into the context
+    RLS reads from.
 
-    app.dependency_overrides[current_profile] = _profile
-    app.dependency_overrides[require_profile] = _profile
-    with TestClient(app) as c:
-        yield c
-    app.dependency_overrides.clear()
+    An earlier version overrode the dependencies and let the conftest fixture
+    set the ContextVars itself. Every test passed, and the app was broken in the
+    browser: FastAPI runs sync dependencies and sync endpoints as separate
+    threadpool tasks with separate context copies, so a ContextVar set in a
+    dependency never reached the endpoint. The tests masked it by setting the
+    variable outside the request entirely. Patch the middleware's input, not the
+    machinery under test.
+    """
+    import app.main as main_module
+
+    original = main_module.resolve_profile
+    main_module.resolve_profile = lambda request: dict(test_profile)
+    try:
+        with TestClient(app) as c:
+            yield c
+    finally:
+        main_module.resolve_profile = original
 
 
 @pytest.fixture
@@ -101,15 +122,18 @@ def anon_client():
     reason.
     """
     _requires_database()
-    saved = dict(app.dependency_overrides)
+    import app.main as main_module
+
+    saved_overrides = dict(app.dependency_overrides)
+    saved_resolver = main_module.resolve_profile
     app.dependency_overrides.clear()
-    current_profile_id.set(None)
-    current_household_id.set(None)
+    main_module.resolve_profile = lambda request: None
     try:
         with TestClient(app) as c:
             yield c
     finally:
-        app.dependency_overrides.update(saved)
+        app.dependency_overrides.update(saved_overrides)
+        main_module.resolve_profile = saved_resolver
 
 
 @pytest.fixture(scope="session")

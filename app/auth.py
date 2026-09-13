@@ -102,11 +102,11 @@ def profile_for_auth_user(auth_user_id: str) -> dict[str, Any] | None:
         ).fetchone()
 
 
-def current_profile(request: Request) -> dict[str, Any] | None:
-    """Resolve the signed-in profile, or None. Never raises.
+def resolve_profile(request: Request) -> dict[str, Any] | None:
+    """Verify the session cookie and look up the profile. Never raises.
 
-    Also binds the profile to the request context, which is what makes RLS
-    apply to every query that follows.
+    Called once per request by the middleware in app/main.py - NOT as a
+    dependency. See the note there for why that distinction matters.
     """
     token = request.cookies.get(SESSION_COOKIE)
     if not token:
@@ -116,15 +116,24 @@ def current_profile(request: Request) -> dict[str, Any] | None:
     except HTTPException:
         return None
 
-    profile = profile_for_auth_user(claims["sub"])
-    if profile is None:
-        # Authenticated with Supabase but no profile here - an account created
-        # outside the bootstrap script. Treat as signed out.
-        return None
+    # Authenticated with Supabase but unknown here - an account created outside
+    # the bootstrap script. Treat as signed out rather than half-authenticated.
+    return profile_for_auth_user(claims["sub"])
 
+
+def bind_identity(profile: dict[str, Any] | None) -> None:
+    """Bind the profile to the current context so RLS applies to every query."""
+    if profile is None:
+        current_profile_id.set(None)
+        current_household_id.set(None)
+        return
     current_profile_id.set(UUID(str(profile["id"])))
     current_household_id.set(UUID(str(profile["household_id"])))
-    return profile
+
+
+def current_profile(request: Request) -> dict[str, Any] | None:
+    """Dependency: the profile the middleware already resolved."""
+    return getattr(request.state, "profile", None)
 
 
 def require_profile(

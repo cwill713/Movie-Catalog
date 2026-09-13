@@ -642,3 +642,50 @@ body {
 .card-meta .year {
     color: #d2c4c7;
 }
+
+/* ---- signed-in account chip -------------------------------------------- */
+.account {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding-left: 0.75rem;
+    margin-left: 0.25rem;
+    border-left: 1px solid #3a2a2e;
+    font-size: 0.8rem;
+    color: #9a8a8d;
+    white-space: nowrap;
+}
+
+.account .who {
+    color: #e8dcde;
+    font-weight: 600;
+}
+
+.account .avatar {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: var(--maroon, #7a1f2c);
+    color: #fff;
+    display: grid;
+    place-items: center;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.account form { margin: 0; }
+
+.account button {
+    background: none;
+    border: none;
+    color: #9a8a8d;
+    font-family: inherit;
+    font-size: 0.78rem;
+    cursor: pointer;
+    padding: 0.2rem 0.1rem;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.account button:hover { color: var(--maroon-light, #c9556a); }

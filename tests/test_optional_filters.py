@@ -31,17 +31,9 @@ FILTERS = {
 }
 
 
-@pytest.fixture(scope="module", autouse=True)
-def catalog_present(test_profile):
-    """Skip the module when the catalog is empty.
-
-    Module-scoped fixtures run before the function-scoped `rls_context` in
-    conftest, so this sets the identity itself rather than relying on it.
-    """
-    from app.db import current_household_id, current_profile_id
-
-    current_profile_id.set(test_profile["id"])
-    current_household_id.set(test_profile["household_id"])
+@pytest.fixture(autouse=True)
+def _bound(as_profile):
+    """These call the repository directly, so they need an identity bound."""
     if not repo.search(limit=1):
         pytest.skip("catalog is empty - run scripts/ingest_imdb.py")
 

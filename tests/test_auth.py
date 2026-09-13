@@ -220,3 +220,52 @@ def test_admin_connection_still_bypasses_rls():
     with admin_connection() as conn:
         n = conn.execute("select count(*) as n from titles").fetchone()["n"]
     assert n > 0
+
+
+# --- identity must reach the endpoint, not just the dependency -------------
+#
+# The bug this guards: identity was bound inside a FastAPI dependency. FastAPI
+# runs sync dependencies and sync endpoints as separate threadpool tasks, each
+# with its own context copy, so the ContextVar never reached the endpoint and
+# every authenticated page returned 500 in a browser.
+#
+# The first fix used @app.middleware("http") - Starlette's BaseHTTPMiddleware -
+# which spawns the downstream app as a task *before* running the dispatch body.
+# Context is copied at spawn, so setting a ContextVar in the body is still too
+# late. Only pure ASGI middleware, running in the same task, works.
+#
+# Both failures were invisible to the test suite at the time. These are the
+# alarm.
+
+def test_signed_in_pages_render(client):
+    """The end-to-end symptom: this was a 500 while the suite stayed green."""
+    response = client.get("/")
+    assert response.status_code == 200, "authenticated page failed to render"
+
+
+def test_endpoint_sees_the_identity_bound_by_middleware(client):
+    """A route that reads the database proves the context crossed the boundary."""
+    response = client.get("/api/movies")
+    assert response.status_code == 200
+    assert isinstance(response.json(), list)
+
+
+def test_identity_middleware_is_pure_asgi():
+    """BaseHTTPMiddleware silently breaks ContextVar propagation - pin the fix."""
+    from starlette.middleware.base import BaseHTTPMiddleware
+
+    from app.main import IdentityMiddleware
+
+    assert not issubclass(IdentityMiddleware, BaseHTTPMiddleware), (
+        "IdentityMiddleware must stay pure ASGI. BaseHTTPMiddleware runs the "
+        "downstream app in a separate task whose context is copied before "
+        "dispatch runs, so identity never reaches the endpoint."
+    )
+
+
+def test_the_app_actually_installs_the_identity_middleware():
+    from app.main import IdentityMiddleware, app
+
+    assert any(m.cls is IdentityMiddleware for m in app.user_middleware), (
+        "IdentityMiddleware is not installed - nothing binds identity per request"
+    )

@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Browse Catalog</title>
-    <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}?v=14">
+    <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}?v=15">
     <style>
         .catalog-filters {
             display: flex;
@@ -99,6 +99,14 @@
                 <button type="reset" class="search-clear-btn">Clear</button>
             </form>
             <a href="/" class="btn-primary" style="text-decoration:none">My Catalog</a>
+
+            {% if profile %}
+            <div class="account">
+                <span class="avatar">{{ profile.display_name[0] }}</span>
+                <span class="who">{{ profile.display_name }}</span>
+                <form method="post" action="/logout"><button type="submit">Sign out</button></form>
+            </div>
+            {% endif %}
         </div>
     </div>
 
