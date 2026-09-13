@@ -21,7 +21,7 @@ changes to **Superseded** and a new entry explains what replaced it.
 | [001](#adr-001) | Exclude TMDB; use IMDb dumps + OMDb | Accepted |
 | [002](#adr-002) | Supabase Postgres over SQLite | Accepted |
 | [003](#adr-003) | Raw SQL with psycopg3 rather than an ORM | Accepted |
-| [004](#adr-004) | UUID primary keys | Open |
+| [004](#adr-004) | UUIDv7 primary keys | Accepted |
 | [005](#adr-005) | Ollama locally, hosted API when deployed | Accepted |
 | [006](#adr-006) | Ratings stored separately from watch entries | Accepted |
 | [007](#adr-007) | Retrieval happens outside the LLM | Accepted |
@@ -164,13 +164,14 @@ significant after Phase 7.
 
 ### UUID primary keys on user-facing tables
 
-**Status:** ⚠️ **Open** — v4 in place, v7 proposed, not yet decided
+**Status:** Accepted · 2026-09-13 *(v4 in migration 001, moved to v7 in 003)*
 
 **Context.** The old SQLite schema used autoincrementing integers. Supabase Auth
 issues UUIDs for users, so `profiles` must be UUID-keyed regardless; the choice
 is whether the other tables match it.
 
-**Decision so far.** `gen_random_uuid()` (UUIDv4) on all tables. **Not final.**
+**Decision.** UUID primary keys, using **UUIDv7** (`migrations/003_uuidv7.sql`).
+Migration 001 originally used `gen_random_uuid()` (v4); 003 replaced it.
 
 **Why.**
 - Mixing integer and UUID keys across one schema is a constant papercut.
@@ -204,8 +205,43 @@ ships `uuidv7()`; we're on 17.6, so it would need a small generator function.
 (For the record: `clock_timestamp()` is the function that returns the true
 wall-clock instant inside a transaction.)
 
-**Open question.** Keep v4, switch to v7, or revert to integers. Switching is
-cheap now and gets more expensive as tables fill.
+### Resolution — UUIDv7, and a proper fix for the root cause
+
+Two changes in `migrations/003_uuidv7.sql`:
+
+**1. UUIDv7 keys.** v7 keeps the UUID format and uniqueness guarantees but puts
+a 48-bit millisecond timestamp in the leading bits, so keys sort in creation
+order. `order by id` is now meaningful, and index inserts append rather than
+scatter.
+
+Postgres 18 ships `uuidv7()` natively; this database is 17.6, so the migration
+defines a SQL function of the same name. **When the platform reaches Postgres
+18, drop the function** — the column defaults reference the name, not the
+implementation, so the built-in takes over with no further change.
+
+Chosen over integers because Supabase Auth issues UUIDs for users, so `profiles`
+must be UUID-keyed regardless, and mixing key types across one schema is a
+constant papercut.
+
+**2. `clock_timestamp()` instead of `now()` for timestamp defaults.** This is
+the actual root cause from ADR-004a, and fixing it removed the workaround
+entirely — `migrate_sqlite_data.py` no longer staggers `created_at`, because
+rows inserted in order now receive genuinely ascending timestamps.
+
+The previous fix treated the symptom. v7 alone would also have treated the
+symptom: the real defect was a timestamp default that returns the same value for
+every row in a transaction.
+
+**Verified.** The shim's version nibble is 7 and its variant nibble is in 8–b;
+the encoded timestamp matches the server clock to within a millisecond (compare
+against the *server* clock, not the client's — a drifting local clock produces
+false failures); five rows inserted in one transaction sort correctly by id and
+receive five distinct timestamps. The five existing entries were re-migrated
+from the untouched SQLite source so every key in the database is v7.
+`tests/test_uuidv7.py` pins all of it.
+
+**Revisit if.** The platform reaches Postgres 18 — at which point this is a
+one-line `drop function` rather than a decision.
 
 ---
 

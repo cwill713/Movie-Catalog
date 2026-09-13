@@ -70,17 +70,18 @@ def main() -> int:
                 inserted += 1
                 continue
 
-            # Offset created_at by the original SQLite id so the default
-            # "newest first" ordering reproduces the old app's "order by id desc".
+            # Rows are read in SQLite id order and created_at defaults to
+            # clock_timestamp(), so each insert gets a later timestamp than the
+            # last and the original ordering is preserved for free. (Before
+            # migration 003 this needed an explicit offset, because now()
+            # returns the transaction start time and gave every row an
+            # identical created_at.)
             row = conn.execute(
                 """insert into watch_entries
-                       (household_id, manual_title, manual_year, manual_genres,
-                        added_by, created_at)
-                   values (%s, %s, %s, %s, %s,
-                           now() - make_interval(secs => %s))
+                       (household_id, manual_title, manual_year, manual_genres, added_by)
+                   values (%s, %s, %s, %s, %s)
                    returning id""",
-                (DEFAULT_HOUSEHOLD_ID, m["title"], m["year"], genres,
-                 DEFAULT_PROFILE_ID, 1000 - m["id"]),
+                (DEFAULT_HOUSEHOLD_ID, m["title"], m["year"], genres, DEFAULT_PROFILE_ID),
             ).fetchone()
             conn.execute(
                 """insert into entry_ratings (entry_id, profile_id, rating)
