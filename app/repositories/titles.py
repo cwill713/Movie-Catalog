@@ -13,7 +13,7 @@ second, so "dragon" puts the well-known dragon films above obscure ones.
 from typing import Any
 from uuid import UUID
 
-from app.db import DEFAULT_HOUSEHOLD_ID, connection
+from app.db import connection, require_context
 
 _COLUMNS = """
     t.imdb_id, t.title_type, t.primary_title, t.start_year, t.end_year,
@@ -61,7 +61,7 @@ def search(
         "year_from": year_from,
         "year_to": year_to,
         "min_rating": min_rating,
-        "household_id": DEFAULT_HOUSEHOLD_ID,
+        "household_id": require_context()[1],
         "limit": max(1, min(limit, 200)),
         "offset": max(0, offset),
     }
@@ -154,7 +154,7 @@ def get(imdb_id: str) -> dict[str, Any] | None:
     with connection() as conn:
         row = conn.execute(
             f"select {_COLUMNS}, {_WATCHED} from titles t where t.imdb_id = %(imdb_id)s",
-            {"imdb_id": imdb_id, "household_id": DEFAULT_HOUSEHOLD_ID},
+            {"imdb_id": imdb_id, "household_id": require_context()[1]},
         ).fetchone()
     return _row(row) if row else None
 
@@ -193,7 +193,7 @@ def link_watch_entry(entry_id: UUID, imdb_id: str) -> bool:
             """update watch_entries
                   set imdb_id = %s
                 where id = %s and household_id = %s""",
-            (imdb_id, entry_id, DEFAULT_HOUSEHOLD_ID),
+            (imdb_id, entry_id, require_context()[1]),
         )
         return cur.rowcount > 0
 
@@ -208,7 +208,7 @@ def ratings_for(imdb_id: str) -> list[dict[str, Any]]:
                  join profiles p on p.id = er.profile_id
                 where we.household_id = %s and we.imdb_id = %s
                 order by p.display_name""",
-            (DEFAULT_HOUSEHOLD_ID, imdb_id),
+            (require_context()[1], imdb_id),
         ).fetchall()
     return [
         {**r, "rating": float(r["rating"]) if r["rating"] is not None else None}

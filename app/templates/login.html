@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign in</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}?v=14">
+    <style>
+        body {
+            min-height: 100vh;
+            display: grid;
+            place-items: center;
+            margin: 0;
+            /* The Absolute Cinema image finally gets a home. Heavily darkened
+               so the form stays legible over it. */
+            background:
+                linear-gradient(rgba(10, 7, 8, 0.88), rgba(10, 7, 8, 0.94)),
+                url("{{ url_for('static', path='absolute-cinema.jpg') }}") center / cover no-repeat fixed;
+        }
+        .signin {
+            width: min(92vw, 360px);
+            background: rgba(22, 15, 17, 0.92);
+            border: 1px solid #3a2a2e;
+            border-radius: 12px;
+            padding: 2rem 1.75rem;
+            box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+        }
+        .signin .brand {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            margin-bottom: 1.5rem;
+        }
+        .signin h1 { font-size: 1.15rem; margin: 0; color: #f0e6e8; }
+        .signin label {
+            display: block;
+            font-size: 0.7rem;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: #9a8a8d;
+            margin-bottom: 0.35rem;
+        }
+        .signin input[type="email"],
+        .signin input[type="password"] {
+            width: 100%;
+            box-sizing: border-box;
+            background: #120c0e;
+            border: 1px solid #3a2a2e;
+            border-radius: 6px;
+            color: #e8dcde;
+            padding: 0.6rem 0.7rem;
+            font-size: 0.95rem;
+            font-family: inherit;
+            margin-bottom: 1rem;
+        }
+        .signin input:focus {
+            outline: none;
+            border-color: var(--maroon, #7a1f2c);
+        }
+        .signin button {
+            width: 100%;
+            background: var(--maroon, #7a1f2c);
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            padding: 0.7rem;
+            font-size: 0.95rem;
+            font-family: inherit;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .signin button:hover { background: #962636; }
+        .error {
+            background: rgba(122, 31, 44, 0.22);
+            border: 1px solid #7a1f2c;
+            color: #f0c4ca;
+            border-radius: 6px;
+            padding: 0.6rem 0.7rem;
+            font-size: 0.85rem;
+            margin-bottom: 1rem;
+        }
+        .note {
+            margin-top: 1.25rem;
+            font-size: 0.75rem;
+            color: #7a6a6d;
+            line-height: 1.5;
+        }
+    </style>
+</head>
+<body>
+    <form class="signin" method="post" action="/login">
+        <div class="brand">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
+                <rect x="2" y="3" width="20" height="18" rx="3" stroke="#7a1f2c" stroke-width="1.6"/>
+                <path d="M2 8h20M7 3v5M17 3v5" stroke="#7a1f2c" stroke-width="1.6"/>
+            </svg>
+            <h1>My Movie Catalog</h1>
+        </div>
+
+        {% if error %}<div class="error">{{ error }}</div>{% endif %}
+
+        <label for="email">Email</label>
+        <input type="email" id="email" name="email" autocomplete="username" required autofocus>
+
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" autocomplete="current-password" required>
+
+        <input type="hidden" name="next" value="{{ next }}">
+        <button type="submit">Sign in</button>
+
+        <p class="note">Invite only &mdash; accounts are created by the household.</p>
+    </form>
+</body>
+</html>

@@ -2,12 +2,14 @@
 
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+
+from app.auth import require_profile
 
 from app.repositories import titles as titles_repo
 from app.schemas import CatalogStats, TitleResponse
 
-router = APIRouter(prefix="/api/catalog", tags=["catalog"])
+router = APIRouter(prefix="/api/catalog", tags=["catalog"], dependencies=[Depends(require_profile)])
 
 
 @router.get("/search", response_model=list[TitleResponse])

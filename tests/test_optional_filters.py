@@ -32,19 +32,18 @@ FILTERS = {
 
 
 @pytest.fixture(scope="module", autouse=True)
-def pool():
-    from app.db import close_pool, init_pool
+def catalog_present(test_profile):
+    """Skip the module when the catalog is empty.
 
-    from app.config import get_settings
+    Module-scoped fixtures run before the function-scoped `rls_context` in
+    conftest, so this sets the identity itself rather than relying on it.
+    """
+    from app.db import current_household_id, current_profile_id
 
-    if not get_settings().database_url:
-        pytest.skip("DATABASE_URL not configured")
-    init_pool()
+    current_profile_id.set(test_profile["id"])
+    current_household_id.set(test_profile["household_id"])
     if not repo.search(limit=1):
-        close_pool()
         pytest.skip("catalog is empty - run scripts/ingest_imdb.py")
-    yield
-    close_pool()
 
 
 def _combinations():

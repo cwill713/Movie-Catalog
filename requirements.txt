@@ -7,6 +7,8 @@ pydantic-settings==2.7.1
 psycopg[binary]==3.2.3
 psycopg-pool==3.2.4
 httpx2==2.12.0          # HTTP client; also what starlette's TestClient wants
+pyjwt[crypto]==2.10.1   # verifies Supabase's ES256 tokens against its JWKS
+python-multipart==0.0.20  # required for the login form POST
 
 # Dev / test
 pytest==8.3.4
