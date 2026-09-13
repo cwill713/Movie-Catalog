@@ -27,7 +27,7 @@ changes to **Superseded** and a new entry explains what replaced it.
 | [007](#adr-007) | Retrieval happens outside the LLM | Accepted |
 | [008](#adr-008) | Jinja now, React later | Accepted |
 | [009](#adr-009) | Archive untracked files rather than delete | Accepted |
-| [010](#adr-010) | Keep the spec out of the public repo | Accepted |
+| [010](#adr-010) | Split docs between a public and a private repo | Accepted |
 
 ---
 
@@ -388,25 +388,50 @@ removed. Deliberate — deleting it is a one-line decision available any time.
 
 ## ADR-010
 
-### Keep `docs/SPEC.md` out of the public repository
+### Split the docs between a public and a private repository
 
-**Status:** Accepted · 2026-09-12
+**Status:** Accepted · 2026-09-12, extended 2026-09-13
 
-**Context.** This repository is public. The spec contains details the owner
-prefers to keep off a public repo.
+**Context.** This repository is public. The working spec and the session worklog
+carry personal detail and conversational context the owner prefers to keep off
+it. But the design reasoning itself is the most portfolio-relevant work in the
+project, and hiding all of it is a real cost.
 
-**Decision.** `/docs/` is gitignored. The spec lives on disk only and has never
-appeared in any commit.
+Initially everything under `docs/` was simply gitignored, which left both files
+**unversioned and existing in exactly one place on one disk**.
 
-**Why.** Owner's preference. Nothing in it is sensitive, but once pushed to a
-public repo it is in the history even if later edited out.
+**Decision.** Split by audience rather than by folder:
+
+| File | Home |
+|---|---|
+| `DECISIONS.md` (this file) | Public repo |
+| `ARCHITECTURE.md` | Public repo |
+| `SPEC.md` | Private repo |
+| `WORKLOG.md` | Private repo |
+
+`docs/` is its own git repository with a private remote, so the private pair is
+version-controlled and backed up off-machine. The public repo's `.gitignore`
+ignores `docs/*` and re-allows only the two published files.
+
+`ARCHITECTURE.md` was written fresh rather than scrubbed from `SPEC.md` — it
+carries the design and reasoning without the phase plan, open questions, or
+personal framing, so the working spec stays entirely private.
+
+**Why.** The earlier all-or-nothing rule forced a bad trade: publish personal
+detail, or publish nothing. Splitting by audience gets the reasoning out where
+it can be read while keeping the private material private — and fixes the backup
+gap, which was the larger risk.
 
 **Consequences.**
-- The spec is **not backed up and not version-controlled**. If the file is lost
-  it is gone. Worth a copy outside the repo, or a private gist.
-- This file is under the same rule, though it contains no personal detail — it
-  could be published as-is if wanted.
+- Published docs must stay free of personal data. Enforced by
+  `tests/test_decisions_doc.py`, which scans both for names, usernames, emails,
+  hardware models, and repo handles, and separately asserts that each of the four
+  files is on the correct side of the line.
+- `ARCHITECTURE.md` and `SPEC.md` overlap and can drift. Accepted: the
+  architecture doc describes the design as built, the spec plans what is next.
+- Two repositories to push to.
 
-**Revisit if.** A scrubbed public version is wanted for the portfolio. The
-licensing analysis and cost modelling are the parts worth showing, and neither
-needs personal detail.
+**Gotcha worth recording.** A `.gitignore` inside `docs/` is read by the *parent*
+repository as well, regardless of which repo owns the folder. Putting the
+published-file exclusions there hid them from the public repo too. They belong
+in `docs/.git/info/exclude`, which is scoped to one repository.

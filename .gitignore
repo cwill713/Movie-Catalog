@@ -13,14 +13,18 @@
 !/migrations/
 !/tests/
 
-# --- docs/: mostly local, one file published ---------------------------------
-# SPEC.md and WORKLOG.md stay on disk - they carry personal detail and this repo
-# is public. DECISIONS.md is the exception: it is deliberately scrubbed of
-# personal data (enforced by tests/test_decisions_doc.py) and is published.
+# --- docs/: split between this public repo and a private one -----------------
+# SPEC.md and WORKLOG.md carry personal detail and conversational context, so
+# they are NOT published here. They live in a separate private repository
+# (docs/ is its own git repo with its own remote), which also backs them up.
+#
+# DECISIONS.md and ARCHITECTURE.md are written free of personal data and are
+# published from this repo. tests/test_decisions_doc.py enforces that.
 /docs/
 !/docs/
 /docs/*
 !/docs/DECISIONS.md
+!/docs/ARCHITECTURE.md
 
 # --- Secrets: never track ---------------------------------------------------
 .env
