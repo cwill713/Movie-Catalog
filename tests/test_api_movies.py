@@ -29,7 +29,7 @@ def test_listed_movies_have_the_expected_shape(client):
     if not movies:
         pytest.skip("no movies in the database")
     movie = movies[0]
-    for field in ("id", "title", "year", "genre_one", "rating"):
+    for field in ("id", "title", "year", "genre_one", "rating", "imdb_id", "poster_url"):
         assert field in movie
     assert 0.0 <= movie["rating"] <= 10.0
 
@@ -46,7 +46,14 @@ def test_home_page_renders(client):
 
 
 def test_edit_page_404s_for_unknown_id(client):
-    assert client.get("/movie-edit/99999999").status_code == 404
+    """A well-formed UUID that isn't ours: 404, not a crash."""
+    unknown = "11111111-2222-3333-4444-555555555555"
+    assert client.get(f"/movie-edit/{unknown}").status_code == 404
+
+
+def test_edit_page_422s_for_malformed_id(client):
+    """Not a UUID at all: rejected at validation, never reaches the database."""
+    assert client.get("/movie-edit/99999999").status_code == 422
 
 
 @pytest.mark.parametrize(

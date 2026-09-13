@@ -1,9 +1,10 @@
 from pathlib import Path
+from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.templating import Jinja2Templates
 
-from app import crud
+from app.repositories import watch_entries as crud
 
 
 router = APIRouter(tags=["web"])
@@ -29,7 +30,7 @@ def movie_input(request: Request):
 
 
 @router.get("/movie-edit/{movie_id}")
-def movie_edit(request: Request, movie_id: int):
+def movie_edit(request: Request, movie_id: UUID):
     movie = crud.get_movie(movie_id)
     if movie is None:
         raise HTTPException(status_code=404, detail="Movie not found")
