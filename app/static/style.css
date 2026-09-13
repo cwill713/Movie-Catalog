@@ -224,6 +224,20 @@ body {
     transition: transform 0.15s, box-shadow 0.15s;
 }
 
+/* Real artwork. Sits above the gradient tint, which stays underneath as the
+   fallback: if poster_url is null the img is never rendered, and if the image
+   404s the onerror handler removes it, revealing the tint. Never a broken-image
+   icon. */
+.poster-img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    z-index: 1;
+    background: #140e10;
+}
+
 .poster-card:hover {
     transform: translateY(-4px);
     box-shadow: 0 16px 30px rgba(0, 0, 0, 0.5);
@@ -234,6 +248,7 @@ body {
 }
 
 .poster-card:hover .card-edit-btn {
+    z-index: 3;
     opacity: 1;
 }
 
@@ -246,6 +261,7 @@ body {
 }
 
 .card-checkbox {
+    z-index: 3;
     position: absolute;
     top: 10px;
     left: 10px;
@@ -286,8 +302,19 @@ body {
     bottom: 0;
     left: 0;
     right: 0;
-    padding: 34px 12px 12px;
-    background: linear-gradient(to top, rgba(0, 0, 0, 0.92), rgba(0, 0, 0, 0));
+    z-index: 2;
+    padding: 68px 12px 12px;
+    /* Tuned against real artwork, not the flat tints. A two-stop linear fade
+       left the year/votes line unreadable over pale posters (Forrest Gump, The
+       Godfather). The scrim now reaches ~0.85 before the text starts and fades
+       over a taller span so the hard edge isn't visible. */
+    background: linear-gradient(
+        to top,
+        rgba(0, 0, 0, 0.95) 0%,
+        rgba(0, 0, 0, 0.88) 42%,
+        rgba(0, 0, 0, 0.55) 72%,
+        rgba(0, 0, 0, 0) 100%
+    );
 }
 
 .card-meta {
@@ -596,4 +623,22 @@ body {
         grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
         gap: 14px;
     }
+}
+
+/* ---- poster legibility -------------------------------------------------
+   These must stay AFTER the .card-meta / .card-title rules above: equal
+   specificity means source order decides, and an earlier copy of this block
+   was silently overridden by `.card-meta .year { color: #999 }`.
+
+   The scrim on .card-overlay handles most artwork; the shadow covers pale
+   posters (Forrest Gump, The Godfather) where a gradient alone isn't enough. */
+.card-title,
+.card-meta,
+.card-meta .year,
+.card-meta .rating {
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.95), 0 0 2px rgba(0, 0, 0, 0.8);
+}
+
+.card-meta .year {
+    color: #d2c4c7;
 }

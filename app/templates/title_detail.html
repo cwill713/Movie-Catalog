@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title.primary_title }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}?v=14">
+    <style>
+        .detail {
+            display: grid;
+            grid-template-columns: 300px minmax(0, 1fr);
+            gap: 2.5rem;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 1.5rem;
+            align-items: start;
+        }
+        @media (max-width: 760px) {
+            .detail { grid-template-columns: 1fr; gap: 1.5rem; }
+            .detail-poster { max-width: 240px; }
+        }
+        .detail-poster {
+            position: relative;
+            aspect-ratio: 2 / 3;
+            border-radius: var(--radius);
+            overflow: hidden;
+            background: #1a1214;
+        }
+        .detail-poster img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        .detail h2 {
+            font-size: 1.9rem;
+            line-height: 1.15;
+            margin: 0 0 0.4rem;
+            color: #f0e6e8;
+        }
+        .detail .subtitle {
+            color: #9a8a8d;
+            font-size: 0.95rem;
+            margin-bottom: 1.1rem;
+        }
+        .detail .subtitle span + span::before { content: " · "; }
+        .scores { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 1.25rem; }
+        .score {
+            background: #1a1214;
+            border: 1px solid #3a2a2e;
+            border-radius: 8px;
+            padding: 0.5rem 0.8rem;
+            min-width: 5.5rem;
+        }
+        .score .val { font-size: 1.15rem; font-weight: 700; color: #f0e6e8; }
+        .score .lbl {
+            font-size: 0.65rem;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: #8a7a7d;
+        }
+        .score.ours { border-color: var(--maroon); }
+        .score.ours .val { color: #ffd54a; }
+        .plot { line-height: 1.65; color: #d8ccce; margin-bottom: 1.5rem; }
+        .facts { display: grid; grid-template-columns: auto 1fr; gap: 0.45rem 1rem; font-size: 0.88rem; }
+        .facts dt {
+            color: #8a7a7d;
+            font-size: 0.7rem;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            padding-top: 0.15rem;
+        }
+        .facts dd { margin: 0; color: #d8ccce; }
+        .reviews { margin-top: 1.75rem; border-top: 1px solid #2a1e21; padding-top: 1.25rem; }
+        .reviews h3 { font-size: 0.95rem; margin: 0 0 0.75rem; color: #f0e6e8; }
+        .review { margin-bottom: 0.85rem; }
+        .review .who { font-size: 0.8rem; color: #9a8a8d; }
+        .review .text { color: #d8ccce; font-size: 0.9rem; font-style: italic; }
+        .no-review { color: #8a7a7d; font-size: 0.85rem; }
+        .back { padding: 1.25rem 1.5rem 0; }
+        .back a { color: #9a8a8d; text-decoration: none; font-size: 0.85rem; }
+        .back a:hover { color: var(--maroon-light, #c9556a); }
+    </style>
+</head>
+<body>
+    <div class="back"><a href="/catalog">&larr; Back to catalog</a></div>
+
+    <div class="detail">
+        <div class="detail-poster">
+            <div class="poster-icon-bg poster-tint-0" style="position:absolute;inset:0">
+                <svg class="poster-icon" width="56" height="56" viewBox="0 0 24 24" fill="none">
+                    <path d="M3 7l3-4h4l-3 4M10 7l3-4h4l-3 4M17 7l3-4h2l-3 4M3 7h18v13a1 1 0 01-1 1H4a1 1 0 01-1-1V7z"
+                          stroke="#fff" stroke-width="1.4"/>
+                </svg>
+            </div>
+            {% if title.poster_url %}
+            <img src="{{ title.poster_url }}" alt="{{ title.primary_title }} poster"
+                 style="position:absolute;inset:0" onerror="this.remove()">
+            {% endif %}
+        </div>
+
+        <div>
+            <h2>{{ title.primary_title }}</h2>
+            <div class="subtitle">
+                {% if title.start_year %}<span>{{ title.start_year }}{% if title.end_year and title.end_year != title.start_year %}–{{ title.end_year }}{% endif %}</span>{% endif %}
+                {% if title.content_rating %}<span>{{ title.content_rating }}</span>{% endif %}
+                {% if title.runtime_minutes %}<span>{{ title.runtime_minutes }} min</span>{% endif %}
+                <span>{{ title.title_type }}</span>
+            </div>
+
+            <div class="card-genres" style="margin-bottom:1.25rem">
+                {% for g in title.genres %}<span class="genre-pill">{{ g }}</span>{% endfor %}
+            </div>
+
+            <div class="scores">
+                {% if title.imdb_rating %}
+                <div class="score"><div class="val">{{ title.imdb_rating }}</div><div class="lbl">IMDb</div></div>
+                {% endif %}
+                {% if title.rt_score %}
+                <div class="score"><div class="val">{{ title.rt_score }}%</div><div class="lbl">Rotten Tom.</div></div>
+                {% endif %}
+                {% if title.metascore %}
+                <div class="score"><div class="val">{{ title.metascore }}</div><div class="lbl">Metacritic</div></div>
+                {% endif %}
+                {% for r in ratings %}
+                <div class="score ours">
+                    <div class="val">{{ "%.1f"|format(r.rating) if r.rating is not none else "—" }}</div>
+                    <div class="lbl">{{ r.display_name }}</div>
+                </div>
+                {% endfor %}
+            </div>
+
+            {% if title.plot %}<p class="plot">{{ title.plot }}</p>{% endif %}
+
+            <dl class="facts">
+                {% if title.director %}<dt>Director</dt><dd>{{ title.director }}</dd>{% endif %}
+                {% if title.writer %}<dt>Writer</dt><dd>{{ title.writer }}</dd>{% endif %}
+                {% if title.actors %}<dt>Starring</dt><dd>{{ title.actors | join(", ") }}</dd>{% endif %}
+                {% if title.language %}<dt>Language</dt><dd>{{ title.language }}</dd>{% endif %}
+                {% if title.country %}<dt>Country</dt><dd>{{ title.country }}</dd>{% endif %}
+                {% if title.released_on %}<dt>Released</dt><dd>{{ title.released_on }}</dd>{% endif %}
+                {% if title.awards %}<dt>Awards</dt><dd>{{ title.awards }}</dd>{% endif %}
+                {% if title.imdb_votes %}<dt>IMDb votes</dt><dd>{{ "{:,}".format(title.imdb_votes) }}</dd>{% endif %}
+            </dl>
+
+            {% if ratings %}
+            <div class="reviews">
+                <h3>What we thought</h3>
+                {% for r in ratings %}
+                <div class="review">
+                    <div class="who">{{ r.display_name }}{% if r.rating is not none %} — {{ "%.1f"|format(r.rating) }}/10{% endif %}</div>
+                    {% if r.review %}<div class="text">“{{ r.review }}”</div>
+                    {% else %}<div class="no-review">No review written yet.</div>{% endif %}
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</body>
+</html>
