@@ -1,9 +1,10 @@
-"""docs/DECISIONS.md is published; docs/SPEC.md is not.
+"""Guards which docs are published, and that published docs stay impersonal.
 
-DECISIONS.md is the one file in docs/ that gets committed to a public repo, so
-it must never pick up personal data. This test is the guard - a failure here
-means something needs generalising before the next commit, not that the test
-needs relaxing.
+docs/ is split: DECISIONS.md and ARCHITECTURE.md are committed to this public
+repo, while SPEC.md and WORKLOG.md live only in a separate private repository.
+The published pair must never pick up personal data. A failure here means
+something needs generalising before the next commit, not that the test needs
+relaxing.
 
 Refer to people by role ("the owner"). Describe machines by capability
 ("a consumer GPU with 16 GB VRAM"), not by model number.
@@ -15,7 +16,10 @@ import pytest
 
 from app.config import BASE_DIR
 
-DECISIONS = BASE_DIR / "docs" / "DECISIONS.md"
+PUBLISHED = [
+    BASE_DIR / "docs" / "DECISIONS.md",
+    BASE_DIR / "docs" / "ARCHITECTURE.md",
+]
 
 # Case-insensitive. Each entry is (pattern, what to write instead).
 FORBIDDEN = [
@@ -34,28 +38,30 @@ FORBIDDEN = [
 ]
 
 
-@pytest.mark.skipif(not DECISIONS.is_file(), reason="DECISIONS.md not present")
+@pytest.mark.parametrize("doc", PUBLISHED, ids=lambda p: p.name)
 @pytest.mark.parametrize("pattern, instead", FORBIDDEN)
-def test_no_personal_data(pattern, instead):
-    text = DECISIONS.read_text(encoding="utf-8")
+def test_no_personal_data(doc, pattern, instead):
+    if not doc.is_file():
+        pytest.skip(f"{doc.name} not present")
     hits = []
-    for n, line in enumerate(text.splitlines(), 1):
+    for n, line in enumerate(doc.read_text(encoding="utf-8").splitlines(), 1):
         if re.search(pattern, line, re.IGNORECASE):
-            hits.append(f"    docs/DECISIONS.md:{n}: {line.strip()[:90]}")
+            hits.append(f"    docs/{doc.name}:{n}: {line.strip()[:90]}")
     assert not hits, (
-        f"\nPersonal data in a public file (/{pattern}/). Use {instead}.\n"
+        f"\nPersonal data in a published file (/{pattern}/). Use {instead}.\n"
         + "\n".join(hits)
     )
 
 
-@pytest.mark.skipif(not DECISIONS.is_file(), reason="DECISIONS.md not present")
-def test_spec_stays_private():
-    """SPEC.md must stay gitignored; only DECISIONS.md is published."""
+def test_correct_docs_are_published():
+    """SPEC.md and WORKLOG.md stay private; DECISIONS.md and ARCHITECTURE.md ship."""
     import subprocess
 
     for path, should_be_ignored in (
         ("docs/SPEC.md", True),
+        ("docs/WORKLOG.md", True),
         ("docs/DECISIONS.md", False),
+        ("docs/ARCHITECTURE.md", False),
     ):
         ignored = (
             subprocess.run(
