@@ -33,6 +33,7 @@ changes to **Superseded** and a new entry explains what replaced it.
 | [013](#adr-013) | Rank search by word similarity, not string similarity | Accepted |
 | [014](#adr-014) | Row-level security via a non-owner role | Accepted |
 | [015](#adr-015) | Credential handling, and HTTPS before deployment | Accepted |
+| [016](#adr-016) | Bind request identity in pure ASGI middleware | Accepted |
 
 ---
 
@@ -732,3 +733,71 @@ means two accounts with the same password store different values.
 **Revisit if.** The app ever needs to be reachable from outside the local
 machine before Phase 10. That is the point at which HTTPS stops being a
 checklist item and becomes blocking.
+
+
+---
+
+## ADR-016
+
+### Bind request identity in pure ASGI middleware
+
+**Status:** Accepted · 2026-09-13
+
+**Context.** Row-level security reads the current profile from a `ContextVar`
+(ADR-014). Something has to put it there, once per request, early enough that
+every query downstream sees it.
+
+The obvious place is a FastAPI dependency. That does not work, and it fails
+silently.
+
+**Two attempts, both broken, both green in CI.**
+
+*Attempt 1 - a dependency.* FastAPI runs sync dependencies and sync endpoints as
+**separate threadpool tasks**, each receiving its own copy of the context. A
+`ContextVar` set inside a dependency is invisible to the endpoint. Every
+authenticated page returned 500 with "no signed-in profile in context".
+
+*Attempt 2 - `@app.middleware("http")`.* Still broken. That decorator builds a
+Starlette `BaseHTTPMiddleware`, which **spawns the downstream application as an
+anyio task before running the dispatch body**. Tasks copy the context at spawn
+time, so setting a variable in the body is already too late. This failure is
+environment-dependent: the TestClient masked it, a real uvicorn server did not.
+
+**Decision.** Bind identity in **pure ASGI middleware** - a plain class
+implementing `__call__(scope, receive, send)`, installed with `add_middleware`.
+Pure ASGI middleware runs in the *same task* as the application it wraps, so
+values set there propagate to dependencies, endpoints and repositories alike.
+
+The profile lookup is synchronous (psycopg), so it runs via `run_in_threadpool`
+to keep it off the event loop; the ContextVars are then set back in the
+request's own context, where they will actually propagate. The resolved profile
+is also placed on `scope["state"]` so route dependencies can read it without a
+second lookup.
+
+**Consequences.**
+- Identity is resolved exactly once per request, before anything else runs.
+- `@app.middleware("http")` must not be used for anything context-sensitive in
+  this codebase. A test asserts `IdentityMiddleware` is not a
+  `BaseHTTPMiddleware` subclass, because that swap looks harmless and silently
+  reintroduces the bug.
+- Repositories keep their clean signatures - no profile threaded through every
+  call - at the cost of relying on machinery that is subtle. The comments
+  explain why, because the code alone looks like it could be simpler.
+
+**The wider lesson, which cost more than the bug.** Both failures were invisible
+to the test suite because an autouse fixture bound the profile at test level -
+supplying out of band exactly what the application was failing to supply. The
+suite verified everything except the thing that was broken, and reported 204
+passing while every signed-in page was a 500 in the browser.
+
+Tests now start with **no identity**. HTTP tests must obtain it from the real
+middleware; tests that call repositories directly opt in explicitly. The fix was
+verified by deleting the binding call and confirming 33 tests fail with the
+exact production error - not by observing that they passed.
+
+**A green test that should be red is worse than a red test.** A failing test
+costs an hour; a false pass costs however long until a person stumbles into it.
+
+**Revisit if.** The app moves to async route handlers throughout, which would
+remove the threadpool boundary - though the middleware would still be the right
+place.

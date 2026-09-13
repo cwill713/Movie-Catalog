@@ -85,6 +85,50 @@ the reasoning, including what would reverse it, is in ADR-003.
 
 ---
 
+## Identity and isolation
+
+The app is invite-only: accounts are created by a script using the service key,
+and there is no registration route. Sign-in posts credentials to Supabase Auth
+and receives an ES256 JWT, which is verified against the project's JWKS on every
+request and carried in an `httpOnly`, `SameSite=Lax` cookie. Passwords are
+stored by Supabase as per-user-salted bcrypt hashes; this application never
+persists or logs them.
+
+Data isolation is enforced by Postgres row-level security rather than by
+application code alone - but making that real took more than writing policies.
+
+**The application connects as the table owner, which bypasses RLS.** Postgres
+skips row-level security for a table's owner, so policies alone would have
+looked correct and enforced nothing, silently. Each request therefore switches
+to a role that does not bypass RLS, and carries the profile in a
+transaction-scoped setting that the policies read:
+
+```sql
+set local role authenticated;
+set local app.current_profile_id = '<uuid>';
+```
+
+`SET LOCAL` rather than `SET` matters because connections are pooled: a
+session-scoped setting would leave one request's identity on the connection for
+the next borrower to inherit.
+
+That identity is bound by **pure ASGI middleware**, not a dependency and not
+`BaseHTTPMiddleware`. Both of those run the downstream code in a separate task
+whose context was copied too early, so the value never arrives - a failure that
+is completely silent. See ADR-016.
+
+Four layers have to hold, so no single mistake exposes data: token verification,
+the context binding, an application-level guard that raises when no identity is
+in scope, and the policies themselves. Maintenance scripts deliberately connect
+as the owner and bypass all of it - they tend the shared catalog and have no
+user context.
+
+Read and write rules differ where it matters: a household's ratings and reviews
+are readable by everyone in it, because that is what makes a joint
+recommendation possible, but only their author may edit them.
+
+---
+
 ## Data model
 
 | Table | Holds |
