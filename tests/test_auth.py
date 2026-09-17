@@ -270,3 +270,81 @@ def test_the_app_actually_installs_the_identity_middleware():
     assert any(m.cls is IdentityMiddleware for m in app.user_middleware), (
         "IdentityMiddleware is not installed - nothing binds identity per request"
     )
+
+
+# ---------------------------------------------------------------------------
+# Session cookie flags (ADR-015)
+#
+# The ADR's deployment checklist says to *verify* secure=True on the real
+# response rather than assume the setting took effect. Nothing did until now:
+# conftest patches resolve_profile, so no test had ever exercised the code that
+# actually sets the cookie.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def login_response(anon_client):
+    """POST /login with sign_in stubbed, returning the raw redirect."""
+    import app.routes.auth as auth_route
+
+    original = auth_route.sign_in
+    auth_route.sign_in = lambda email, password: {
+        "access_token": "stub-token",
+        "expires_in": 3600,
+    }
+    try:
+        yield anon_client.post(
+            "/login",
+            data={"email": "someone@example.test", "password": "irrelevant"},
+            follow_redirects=False,
+        )
+    finally:
+        auth_route.sign_in = original
+
+
+def _cookie_header(response) -> str:
+    """The raw Set-Cookie line.
+
+    Read the header, not the cookie jar: a client speaking plain HTTP may drop a
+    Secure cookie entirely, so a jar-based assertion could pass by looking at
+    nothing at all.
+    """
+    raw = response.headers.get("set-cookie")
+    assert raw, "login set no cookie"
+    return raw
+
+
+def test_login_sets_a_secure_cookie(login_response):
+    """HTTPS everywhere, local included - so this is unconditional."""
+    assert "Secure" in _cookie_header(login_response)
+
+
+def test_login_sets_an_httponly_cookie(login_response):
+    """Keeps the session token out of reach of any injected JavaScript."""
+    assert "HttpOnly" in _cookie_header(login_response)
+
+
+def test_login_sets_samesite_lax(login_response):
+    """Survives ordinary navigation, refuses cross-site form posts."""
+    assert "SameSite=lax" in _cookie_header(login_response).replace("Samesite", "SameSite")
+
+
+def test_login_redirects_into_the_app_only(anon_client):
+    """A protocol-relative ?next= must not bounce a fresh session offsite."""
+    import app.routes.auth as auth_route
+
+    original = auth_route.sign_in
+    auth_route.sign_in = lambda email, password: {
+        "access_token": "stub-token",
+        "expires_in": 3600,
+    }
+    try:
+        response = anon_client.post(
+            "/login",
+            data={"email": "a@b.test", "password": "x", "next": "//evil.example"},
+            follow_redirects=False,
+        )
+    finally:
+        auth_route.sign_in = original
+
+    assert response.headers["location"] == "/"
