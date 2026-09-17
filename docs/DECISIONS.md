@@ -678,7 +678,7 @@ which case a dedicated role per application would be marginally tidier.
 
 ## ADR-015
 
-### Credential handling, and HTTPS as a deployment prerequisite
+### Credential handling, and HTTPS everywhere
 
 **Status:** Accepted · 2026-09-13
 
@@ -734,6 +734,64 @@ means two accounts with the same password store different values.
 machine before Phase 10. That is the point at which HTTPS stops being a
 checklist item and becomes blocking.
 
+
+---
+
+### ADR-015a - HTTPS locally too, not just once deployed
+
+**Status:** Accepted · 2026-09-16 · amends the decision above
+
+**What changed.** The original decision treated HTTPS as a Phase 10 deployment
+prerequisite and accepted plain HTTP locally, on the grounds that loopback
+traffic never leaves the machine. That reasoning still holds for eavesdropping,
+but it misses the more likely failure: **a security control that only switches on
+in production is a control nobody has ever actually run.**
+
+The cookie flag made this concrete. It read `secure=not _is_local()`, which meant
+the deployed configuration - the one that matters - was the single configuration
+never exercised. A typo, an unset variable, or an environment string that didn't
+match the expected list would all have produced a silently insecure cookie,
+discovered in production or not at all.
+
+**Decision.** The app is served over HTTPS everywhere, local development
+included, and `secure=True` is set unconditionally. The environment-sniffing
+helpers are deleted rather than left inert.
+
+**Locally trusted certificates.** A self-signed certificate produces a browser
+interstitial on every session, which trains people to click through security
+warnings - a worse habit than the problem it solves. Instead a local certificate
+authority is installed into the OS trust store and issues a certificate for
+`localhost`, `127.0.0.1` and `::1`. The certificate and its key are gitignored;
+the CA's private key lives outside the repository entirely.
+
+**HSTS stays out of local configuration.** HSTS tells a browser never to use
+plain HTTP for a host again, and it is scoped to the **hostname**, not the port
+or the project. Setting it on `localhost` would pin every other project ever
+served from `localhost` on that machine to HTTPS, including ones with no
+certificate. It belongs only in the deployed configuration.
+
+**A diagnostic trap worth recording.** Verifying the local certificate with a
+command-line client built against the Windows TLS stack fails with
+`CERT_TRUST_REVOCATION_STATUS_UNKNOWN`. That is a *revocation* check, not a trust
+failure: a locally issued certificate carries no CRL or OCSP URL, so revocation
+status cannot be determined, and the default policy refuses. Browsers skip
+revocation checking for locally installed roots, so the browser is the
+authoritative test here, not the command line.
+
+**Consequences.**
+- Running the app locally now requires the certificate files to exist; the
+  server will not start without them.
+- Local and deployed differ in one line of configuration (HSTS) instead of in
+  the transport itself.
+- The remaining Phase 10 checklist items are TLS termination with HTTP
+  redirected, and HSTS. The cookie item is closed: `secure=True` is
+  unconditional and pinned by a test that reads the raw `Set-Cookie` header,
+  since a client speaking plain HTTP may drop a `Secure` cookie entirely and a
+  cookie-jar assertion could pass while examining nothing.
+
+**Revisit if.** Certificate management becomes a burden for additional
+contributors, at which point a documented setup script is the answer rather than
+reverting to plain HTTP.
 
 ---
 

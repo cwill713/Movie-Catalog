@@ -11,7 +11,6 @@ from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from app.auth import SESSION_COOKIE, current_profile, sign_in
-from app.config import get_settings
 
 router = APIRouter(tags=["auth"])
 TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
@@ -54,7 +53,7 @@ def login(
         tokens["access_token"],
         httponly=True,               # not readable from JavaScript
         samesite="lax",              # survives normal navigation, blocks CSRF-by-form
-        secure=not _is_local(),      # HTTPS-only once deployed
+        secure=True,                 # HTTPS everywhere, local included (ADR-015)
         max_age=tokens.get("expires_in", 3600),
         path="/",
     )
@@ -67,14 +66,3 @@ def logout():
     response = RedirectResponse("/login", status_code=303)
     response.delete_cookie(SESSION_COOKIE, path="/")
     return response
-
-
-def _is_local() -> bool:
-    """Secure cookies need HTTPS, which breaks sign-in over plain localhost."""
-    return get_settings().supabase_url.startswith("http://") or _running_locally()
-
-
-def _running_locally() -> bool:
-    import os
-
-    return os.environ.get("ENVIRONMENT", "local").lower() in ("local", "dev", "development")

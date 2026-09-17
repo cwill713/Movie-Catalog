@@ -40,6 +40,17 @@
 *.tsv
 *.tsv.gz
 
+# --- TLS certificates -------------------------------------------------------
+# Local dev certs from mkcert. The .key file is a PRIVATE KEY; publishing one
+# lets anyone impersonate this host to a browser trusting the local CA. The
+# root-level /* rule already covers /certs/, but say it explicitly too - this is
+# a public repo and defence in depth costs nothing here.
+/certs/
+*.pem
+*.key
+*.crt
+*.pfx
+
 # --- Databases --------------------------------------------------------------
 *.db
 *.sqlite
