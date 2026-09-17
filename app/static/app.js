@@ -260,14 +260,30 @@ async function saveRating() {
         return;
     }
 
-    const response = await fetch(`/api/movies/${movieId}/rating`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rating, review }),
-    });
+    // fetch() rejects outright when the server is down or restarting. Unguarded,
+    // that became an unhandled rejection: the modal sat there having saved
+    // nothing, with no error shown. A silent no-op on a save is the worst
+    // possible failure - the value looks accepted until someone checks the
+    // database.
+    let response;
+    try {
+        response = await fetch(`/api/movies/${movieId}/rating`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ rating, review }),
+        });
+    } catch (e) {
+        showRatingError('Could not reach the server. Nothing was saved.');
+        return;
+    }
+
+    if (response.status === 401) {
+        showRatingError('Your session expired. Reload the page and sign in again.');
+        return;
+    }
 
     if (!response.ok) {
-        showRatingError(`Could not save (${response.status}). The rating is unchanged.`);
+        showRatingError(`Could not save (${response.status}). Nothing was saved.`);
         return;
     }
 
