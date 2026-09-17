@@ -746,11 +746,15 @@ means two accounts with the same password store different values.
 **Deployment checklist - Phase 10 must not ship without all of these:**
 
 - [ ] TLS terminated in front of the app; plain HTTP redirected to HTTPS
-- [ ] `ENVIRONMENT` set to something other than `local`, so the session cookie
-      becomes `Secure` (the code already keys off this)
-- [ ] HSTS header set
-- [ ] Verify `secure=True` on the cookie in the deployed response, rather than
-      assuming the environment variable took effect
+- [ ] HSTS header set - **deployed configuration only**, never locally, since it
+      is scoped to the hostname and would pin every other project served from
+      `localhost` (see ADR-015a)
+- [x] ~~`ENVIRONMENT` set to something other than `local`~~ - obsolete. The
+      cookie is `secure=True` unconditionally and the environment-sniffing
+      helpers are deleted; there is no longer a variable to set. -> ADR-015a
+- [x] ~~Verify `secure=True` in the deployed response~~ - done differently, and
+      better: pinned by a test reading the raw `Set-Cookie` header, so it cannot
+      regress between deployments rather than being checked once by hand.
 
 **Consequences.**
 - Owning the sign-in form is a small, permanent responsibility. Redirecting to
