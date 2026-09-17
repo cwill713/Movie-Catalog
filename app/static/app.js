@@ -38,7 +38,7 @@ function renderMovieCard(movie, tintIndex) {
             <div class="card-overlay">
                 <div class="card-meta">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="#ffd54a"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 21 12 17.77 5.82 21 7 14.14l-5-4.87 6.91-1.01z"/></svg>
-                    <span class="rating">${movie.rating.toFixed(1)}</span>
+                    <span class="rating" role="button" tabindex="0" onclick="openRatingModal('${movie.id}')" onkeydown="if(event.key==='Enter')openRatingModal('${movie.id}')">${movie.rating.toFixed(1)}</span>
                     <span class="year">${movie.year}</span>
                 </div>
                 <div class="card-title">${movie.imdb_id ? `<a href="/title/${movie.imdb_id}" style="color:inherit;text-decoration:none">${movie.title}</a>` : movie.title}</div>
@@ -59,9 +59,28 @@ function renderMovieGrid(movies, emptyMessage) {
     onCheckboxChange();
 }
 
+const moviesById = new Map();
+
+function indexMovies(movies) {
+    moviesById.clear();
+    movies.forEach(m => moviesById.set(String(m.id), m));
+}
+
+// Seed from the server-rendered payload so the Jinja grid is interactive
+// immediately; loadMovieData() replaces both grid and map moments later.
+const bootstrap = document.getElementById('bootstrap-movies');
+if (bootstrap) {
+    try {
+        indexMovies(JSON.parse(bootstrap.textContent));
+    } catch (e) {
+        console.error('bootstrap-movies did not parse', e);
+    }
+}
+
 async function loadMovieData() {
     const response = await fetch('/api/movies');
     const movies = await response.json();
+    indexMovies(movies);
     renderMovieGrid(movies, 'There is no current data');
 }
 
@@ -115,6 +134,7 @@ searchMovieForm.addEventListener('submit', async (e) => {
     if (query) {
         const response = await fetch(`/api/movies/search?title=${encodeURIComponent(query)}`);
         const movies = await response.json();
+        indexMovies(movies);
         renderMovieGrid(movies, 'No movies found matching your search.');
     }
 });
@@ -195,5 +215,76 @@ async function deleteSelectedMovies() {
     if (selectAllCb) selectAllCb.checked = false;
     loadMovieData();
 }
+
+function showRatingError(message) {
+    const error = document.getElementById('rating-error');
+    error.textContent = message;
+    error.hidden = !message;
+}
+
+function openRatingModal(movieId) {
+    const modal = document.getElementById('rating-modal');
+    const input = document.getElementById('rating-input');
+    const reviewInput = document.getElementById('review-input');
+    const movie = moviesById.get(String(movieId));
+    if (!movie) return;
+
+    document.getElementById('rating-modal-title').textContent = `Rate ${movie.title}`;
+    showRatingError('');
+    input.value = movie.rating.toFixed(1);
+    reviewInput.value = movie.review || '';
+    modal.dataset.movieId = movieId;
+    modal.classList.add('active');
+    input.focus();
+    input.select();
+}
+
+function closeRatingModal() {
+    const modal = document.getElementById('rating-modal');
+    modal.classList.remove('active');
+    delete modal.dataset.movieId;
+    showRatingError('');
+}
+
+async function saveRating() {
+    const modal = document.getElementById('rating-modal');
+    const movieId = modal.dataset.movieId;
+    const rating = parseFloat(document.getElementById('rating-input').value);
+    const review = document.getElementById('review-input').value.trim();
+
+    if (Number.isNaN(rating) || rating < 0 || rating > 10) {
+        showRatingError('Enter a number between 0 and 10.');
+        return;
+    }
+
+    const response = await fetch(`/api/movies/${movieId}/rating`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rating, review }),
+    });
+
+    if (!response.ok) {
+        showRatingError(`Could not save (${response.status}). The rating is unchanged.`);
+        return;
+    }
+
+    closeRatingModal();
+    loadMovieData();
+}
+
+document.getElementById('rating-cancel-btn').addEventListener('click', closeRatingModal);
+document.getElementById('rating-save-btn').addEventListener('click', saveRating);
+document.getElementById('rating-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); saveRating(); }
+});
+document.getElementById('review-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); saveRating(); }
+});
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeRatingModal();
+});
+document.getElementById('rating-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'rating-modal') closeRatingModal();
+});
 
 loadMovieData();

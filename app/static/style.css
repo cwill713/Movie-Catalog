@@ -689,3 +689,84 @@ body {
 }
 
 .account button:hover { color: var(--maroon-light, #c9556a); }
+
+/* ---- clickable rating + modal error (Phase 5b) --------------------------
+   Appended at the end deliberately. `.card-meta .rating` is already declared
+   twice above (colour, then text-shadow); equal specificity means source order
+   decides, so anything that must win has to sit after both. */
+.card-meta .rating {
+    cursor: pointer;
+    border-radius: 3px;
+    padding: 0 2px;
+    transition: color 0.12s ease, background 0.12s ease;
+}
+
+.card-meta .rating:hover,
+.card-meta .rating:focus-visible {
+    color: #fff;
+    background: rgba(122, 31, 44, 0.85);
+    outline: none;
+}
+
+.modal-error {
+    margin: 0.75rem 0 0;
+    color: var(--maroon-light, #c9556a);
+    font-size: 0.82rem;
+}
+
+#rating-form {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+#rating-form label {
+    font-size: 0.85rem;
+    color: #9a8a8d;
+}
+
+#rating-input {
+    width: 100%;
+    padding: 0.5rem;
+    background: #1a1416;
+    border: 1px solid #4a3a3d;
+    border-radius: 4px;
+    color: #fff;
+    font-family: inherit;
+    font-size: 1rem;
+}
+
+#rating-input:focus {
+    outline: none;
+    border-color: var(--maroon-light, #c9556a);
+}
+
+#review-input {
+    width: 100%;
+    padding: 0.5rem;
+    background: #1a1416;
+    border: 1px solid #4a3a3d;
+    border-radius: 4px;
+    color: #fff;
+    font-family: inherit;
+    font-size: 0.9rem;
+    line-height: 1.45;
+    resize: vertical;
+    min-height: 5.5rem;
+}
+
+#review-input:focus {
+    outline: none;
+    border-color: var(--maroon-light, #c9556a);
+}
+
+#rating-form .label-hint {
+    color: #6d5c5f;
+    font-weight: 400;
+}
+
+#rating-form .field-hint {
+    margin: 0;
+    font-size: 0.75rem;
+    color: #6d5c5f;
+}

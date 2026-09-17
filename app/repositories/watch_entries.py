@@ -25,6 +25,7 @@ _SELECT = """
         case when we.imdb_id is not null then t.genres
              else we.manual_genres end                    as genres,
         er.rating                                         as rating,
+        er.review                                         as review,
         we.imdb_id,
         t.poster_url
     from watch_entries we
@@ -33,6 +34,10 @@ _SELECT = """
            on er.entry_id = we.id and er.profile_id = %(profile_id)s
     where we.household_id = %(household_id)s
 """
+
+
+# Distinguishes "caller omitted this field" from "caller sent an empty value".
+_UNSET = object()
 
 
 def _row_to_movie(row: dict[str, Any]) -> dict[str, Any]:
@@ -46,6 +51,7 @@ def _row_to_movie(row: dict[str, Any]) -> dict[str, Any]:
         "genre_two": genres[1],
         "genre_three": genres[2],
         "rating": float(row["rating"]) if row["rating"] is not None else 0.0,
+        "review": row.get("review"),
         "imdb_id": row.get("imdb_id"),
         "poster_url": row.get("poster_url"),
     }
@@ -131,6 +137,53 @@ def update_movie(movie_id: UUID, movie: MovieCreate) -> dict[str, Any] | None:
                 (movie_id, params["profile_id"], movie.rating),
             )
     return {"id": movie_id, **movie.model_dump()}
+
+
+def update_rating(
+    movie_id: UUID, rating: float, review: str | None | object = _UNSET
+) -> dict[str, Any] | None:
+    """Set this profile's rating, and its review when one was supplied.
+
+    `review` defaults to `_UNSET` rather than None so that omitting it leaves any
+    existing review alone, while passing None or "" clears it. Treating "absent"
+    and "empty" as the same thing would mean a caller updating only the score
+    silently destroyed the prose - the same shape of loss the ingest upsert
+    guards against.
+
+    The read must follow the write: returning a row selected beforehand sends
+    the caller the previous values under a response model that promises the
+    updated ones.
+    """
+    params = _params(id=movie_id)
+    with connection() as conn:
+        with conn.transaction():
+            entry = conn.execute(
+                """select id from watch_entries
+                    where id = %(id)s and household_id = %(household_id)s""",
+                params,
+            ).fetchone()
+            if entry is None:
+                return None
+
+            if review is _UNSET:
+                conn.execute(
+                    """insert into entry_ratings (entry_id, profile_id, rating)
+                       values (%s, %s, %s)
+                       on conflict (entry_id, profile_id)
+                       do update set rating = excluded.rating""",
+                    (movie_id, params["profile_id"], rating),
+                )
+            else:
+                conn.execute(
+                    """insert into entry_ratings (entry_id, profile_id, rating, review)
+                       values (%s, %s, %s, %s)
+                       on conflict (entry_id, profile_id)
+                       do update set rating = excluded.rating,
+                                     review = excluded.review""",
+                    (movie_id, params["profile_id"], rating, review or None),
+                )
+        row = conn.execute(_SELECT + " and we.id = %(id)s", params).fetchone()
+    return _row_to_movie(row) if row else None
 
 
 def delete_movies(ids: list[UUID]) -> int:
