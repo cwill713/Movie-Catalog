@@ -10,6 +10,7 @@ flattening happens in ``_row_to_movie`` so the schema is clean and the existing
 frontend keeps working.
 """
 
+from datetime import date
 from typing import Any
 from uuid import UUID
 
@@ -36,6 +37,7 @@ _SELECT = """
           where et.entry_id = we.id
             and et.profile_id = %(profile_id)s)          as tags,
         we.imdb_id,
+        we.watched_on,
         t.poster_url
     from watch_entries we
     left join titles t on t.imdb_id = we.imdb_id
@@ -62,6 +64,7 @@ def _row_to_movie(row: dict[str, Any]) -> dict[str, Any]:
         "rating": float(row["rating"]) if row["rating"] is not None else 0.0,
         "review": row.get("review"),
         "tags": list(row.get("tags") or []),
+        "watched_on": row.get("watched_on"),
         "imdb_id": row.get("imdb_id"),
         "poster_url": row.get("poster_url"),
     }
@@ -200,14 +203,19 @@ def update_rating(
     rating: float,
     review: str | None | object = _UNSET,
     tags: list[str] | object = _UNSET,
+    watched_on: date | None | object = _UNSET,
 ) -> dict[str, Any] | None:
     """Set this profile's rating, plus its review and tags when supplied.
 
-    `review` and `tags` default to `_UNSET` rather than None so that omitting
-    either leaves it alone, while passing an empty value clears it. Treating
-    "absent" and "empty" as the same thing would mean a caller updating only the
-    score silently destroyed the prose or the tags - the same shape of loss the
-    ingest upsert guards against.
+    `review`, `tags` and `watched_on` default to `_UNSET` rather than None so
+    that omitting any of them leaves it alone, while passing an empty value
+    clears it. Treating "absent" and "empty" as the same thing would mean a
+    caller updating only the score silently destroyed the rest - the same shape
+    of loss the ingest upsert guards against.
+
+    `watched_on` is the odd one out: it lives on `watch_entries`, which is
+    household-level, so it is written to a different table and is shared with
+    everyone in the household rather than being this profile's own.
 
     The read must follow the write: returning a row selected beforehand sends
     the caller the previous values under a response model that promises the
@@ -244,6 +252,13 @@ def update_rating(
 
             if tags is not _UNSET:
                 _replace_tags(conn, movie_id, params["profile_id"], tags)
+
+            if watched_on is not _UNSET:
+                conn.execute(
+                    """update watch_entries set watched_on = %s
+                        where id = %s and household_id = %s""",
+                    (watched_on, movie_id, params["household_id"]),
+                )
 
         row = conn.execute(_SELECT + " and we.id = %(id)s", params).fetchone()
     return _row_to_movie(row) if row else None

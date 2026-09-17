@@ -83,6 +83,7 @@ def a_movie(client):
             "rating": movie["rating"],
             "review": movie["review"] or "",
             "tags": movie["tags"],
+            "watched_on": movie["watched_on"],
         },
     )
 
@@ -215,7 +216,7 @@ def test_the_page_ships_every_field_the_renderer_needs(client):
         pytest.skip("no movies in the database")
 
     needed = {
-        "id", "title", "year", "rating", "review", "tags",
+        "id", "title", "year", "rating", "review", "tags", "watched_on",
         "genre_one", "genre_two", "genre_three", "imdb_id", "poster_url",
     }
     missing = needed - set(rows[0])
@@ -312,5 +313,92 @@ def test_too_many_tags_are_rejected(client, a_movie):
     response = client.patch(
         f"/api/movies/{a_movie['id']}/rating",
         json={"rating": 7.0, "tags": [f"tag-{i}" for i in range(26)]},
+    )
+    assert response.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# Watch dates - watch_entries.watched_on, household-level rather than per-person
+# ---------------------------------------------------------------------------
+
+
+def test_watch_date_is_saved_and_returned(client, a_movie):
+    response = client.patch(
+        f"/api/movies/{a_movie['id']}/rating",
+        json={"rating": 7.0, "watched_on": "2026-03-14"},
+    )
+    assert response.status_code == 200
+    assert response.json()["watched_on"] == "2026-03-14"
+
+
+def test_watch_date_survives_a_refetch(client, a_movie):
+    client.patch(
+        f"/api/movies/{a_movie['id']}/rating",
+        json={"rating": 7.0, "watched_on": "2025-12-25"},
+    )
+    refetched = next(
+        m for m in client.get("/api/movies").json() if m["id"] == a_movie["id"]
+    )
+    assert refetched["watched_on"] == "2025-12-25"
+
+
+def test_updating_only_the_rating_does_not_destroy_the_watch_date(client, a_movie):
+    """Omitting `watched_on` must leave it alone.
+
+    It lives on watch_entries rather than entry_ratings, so this is a different
+    table from review and tags - but the same failure, and worth its own test
+    precisely because the write path is separate.
+    """
+    client.patch(
+        f"/api/movies/{a_movie['id']}/rating",
+        json={"rating": 7.0, "watched_on": "2024-06-01"},
+    )
+
+    response = client.patch(f"/api/movies/{a_movie['id']}/rating", json={"rating": 9.0})
+
+    assert response.json()["rating"] == 9.0
+    assert response.json()["watched_on"] == "2024-06-01"
+
+
+def test_a_null_watch_date_clears_it(client, a_movie):
+    client.patch(
+        f"/api/movies/{a_movie['id']}/rating",
+        json={"rating": 7.0, "watched_on": "2024-06-01"},
+    )
+    response = client.patch(
+        f"/api/movies/{a_movie['id']}/rating",
+        json={"rating": 7.0, "watched_on": None},
+    )
+    assert response.json()["watched_on"] is None
+
+
+def test_a_future_watch_date_is_rejected(client, a_movie):
+    """A mistyped year would quietly skew any later recency weighting."""
+    from datetime import date, timedelta
+
+    far_off = (date.today() + timedelta(days=30)).isoformat()
+    response = client.patch(
+        f"/api/movies/{a_movie['id']}/rating",
+        json={"rating": 7.0, "watched_on": far_off},
+    )
+    assert response.status_code == 422
+
+
+def test_tomorrow_is_allowed_for_timezone_slack(client, a_movie):
+    """The client may be a day ahead of the server; that is not a typo."""
+    from datetime import date, timedelta
+
+    tomorrow = (date.today() + timedelta(days=1)).isoformat()
+    response = client.patch(
+        f"/api/movies/{a_movie['id']}/rating",
+        json={"rating": 7.0, "watched_on": tomorrow},
+    )
+    assert response.status_code == 200
+
+
+def test_a_watch_date_before_cinema_is_rejected(client, a_movie):
+    response = client.patch(
+        f"/api/movies/{a_movie['id']}/rating",
+        json={"rating": 7.0, "watched_on": "1850-01-01"},
     )
     assert response.status_code == 422

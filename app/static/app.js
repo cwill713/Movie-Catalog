@@ -44,6 +44,7 @@ function renderMovieCard(movie, tintIndex) {
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="#ffd54a"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 21 12 17.77 5.82 21 7 14.14l-5-4.87 6.91-1.01z"/></svg>
                     <span class="rating" role="button" tabindex="0" onclick="openRatingModal('${movie.id}')" onkeydown="if(event.key==='Enter')openRatingModal('${movie.id}')">${movie.rating.toFixed(1)}</span>
                     <span class="year">${movie.year}</span>
+                    ${movie.watched_on ? `<span class="seen-on" title="Watched ${esc(movie.watched_on)}">${esc(formatSeen(movie.watched_on))}</span>` : ''}
                 </div>
                 <div class="card-title">${movie.imdb_id ? `<a href="/title/${esc(movie.imdb_id)}" style="color:inherit;text-decoration:none">${esc(movie.title)}</a>` : esc(movie.title)}</div>
                 <div class="card-genres">${genrePills}</div>
@@ -234,6 +235,17 @@ async function deleteSelectedMovies() {
     loadMovieData();
 }
 
+function formatSeen(iso) {
+    // Parsed as parts, not `new Date(iso)`: that reads a bare YYYY-MM-DD as UTC
+    // midnight and then renders it in local time, so anyone west of UTC sees the
+    // previous day.
+    const [y, m, d] = iso.split('-').map(Number);
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const thisYear = new Date().getFullYear();
+    return y === thisYear ? `seen ${d} ${months[m - 1]}` : `seen ${months[m - 1]} ${y}`;
+}
+
 function parseTags(value) {
     return value.split(',').map(t => t.trim()).filter(Boolean);
 }
@@ -290,6 +302,7 @@ function openRatingModal(movieId) {
     showRatingError('');
     input.value = movie.rating.toFixed(1);
     reviewInput.value = movie.review || '';
+    document.getElementById('watched-input').value = movie.watched_on || '';
     document.getElementById('tags-input').value = (movie.tags || []).join(', ');
     renderTagSuggestions();
     modal.dataset.movieId = movieId;
@@ -311,6 +324,8 @@ async function saveRating() {
     const rating = parseFloat(document.getElementById('rating-input').value);
     const review = document.getElementById('review-input').value.trim();
     const tags = parseTags(document.getElementById('tags-input').value);
+    // "" from an empty date input means "clear it"; the endpoint reads null.
+    const watched_on = document.getElementById('watched-input').value || null;
 
     if (Number.isNaN(rating) || rating < 0 || rating > 10) {
         showRatingError('Enter a number between 0 and 10.');
@@ -327,7 +342,7 @@ async function saveRating() {
         response = await fetch(`/api/movies/${movieId}/rating`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ rating, review, tags }),
+            body: JSON.stringify({ rating, review, tags, watched_on }),
         });
     } catch (e) {
         showRatingError('Could not reach the server. Nothing was saved.');
