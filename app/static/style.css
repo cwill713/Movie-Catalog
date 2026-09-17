@@ -770,3 +770,50 @@ body {
     font-size: 0.75rem;
     color: #6d5c5f;
 }
+
+/* ---- mood tags (Phase 5b) ----------------------------------------------- */
+.card-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px;
+    margin-top: 4px;
+}
+
+/* Visually distinct from .genre-pill on purpose: genres are catalog facts,
+   tags are this household's own words. */
+.tag-pill {
+    font-size: 0.6rem;
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: rgba(122, 31, 44, 0.55);
+    border: 1px solid rgba(201, 85, 106, 0.5);
+    color: #f0dfe2;
+}
+
+.tag-suggestions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.tag-suggestions button {
+    font-family: inherit;
+    font-size: 0.7rem;
+    padding: 2px 7px;
+    border-radius: 10px;
+    border: 1px solid #4a3a3d;
+    background: #1a1416;
+    color: #9a8a8d;
+    cursor: pointer;
+}
+
+.tag-suggestions button:hover {
+    border-color: var(--maroon-light, #c9556a);
+    color: #fff;
+}
+
+.tag-suggestions button.on {
+    background: var(--maroon, #7a1f2c);
+    border-color: var(--maroon, #7a1f2c);
+    color: #fff;
+}

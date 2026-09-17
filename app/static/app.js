@@ -18,17 +18,21 @@ const sortConfig = {
 function renderMovieCard(movie, tintIndex) {
     const genrePills = [movie.genre_one, movie.genre_two, movie.genre_three]
         .filter(Boolean)
-        .map(g => `<span class="genre-pill">${g}</span>`)
+        .map(g => `<span class="genre-pill">${esc(g)}</span>`)
+        .join('');
+
+    const tagPills = (movie.tags || [])
+        .map(t => `<span class="tag-pill">${esc(t)}</span>`)
         .join('');
 
     return `
-        <div class="poster-card" data-id="${movie.id}" data-title="${movie.title}" data-year="${movie.year}" data-rating="${movie.rating}">
+        <div class="poster-card" data-id="${movie.id}" data-title="${esc(movie.title)}" data-year="${movie.year}" data-rating="${movie.rating}">
             <div class="poster-icon-bg poster-tint-${tintIndex % 5}" style="position:absolute; inset:0;">
                 <svg class="poster-icon" width="56" height="56" viewBox="0 0 24 24" fill="none">
                     <path d="M3 7l3-4h4l-3 4M10 7l3-4h4l-3 4M17 7l3-4h2l-3 4M3 7h18v13a1 1 0 01-1 1H4a1 1 0 01-1-1V7z" stroke="#fff" stroke-width="1.4"/>
                 </svg>
             </div>
-            ${movie.poster_url ? `<img class="poster-img" src="${movie.poster_url}" alt="${movie.title} poster" loading="lazy" onerror="this.remove()">` : ''}
+            ${movie.poster_url ? `<img class="poster-img" src="${movie.poster_url}" alt="${esc(movie.title)} poster" loading="lazy" onerror="this.remove()">` : ''}
             <div class="card-checkbox">
                 <input type="checkbox" class="movie-cb" value="${movie.id}" onchange="onCheckboxChange()">
             </div>
@@ -41,8 +45,9 @@ function renderMovieCard(movie, tintIndex) {
                     <span class="rating" role="button" tabindex="0" onclick="openRatingModal('${movie.id}')" onkeydown="if(event.key==='Enter')openRatingModal('${movie.id}')">${movie.rating.toFixed(1)}</span>
                     <span class="year">${movie.year}</span>
                 </div>
-                <div class="card-title">${movie.imdb_id ? `<a href="/title/${movie.imdb_id}" style="color:inherit;text-decoration:none">${movie.title}</a>` : movie.title}</div>
+                <div class="card-title">${movie.imdb_id ? `<a href="/title/${esc(movie.imdb_id)}" style="color:inherit;text-decoration:none">${esc(movie.title)}</a>` : esc(movie.title)}</div>
                 <div class="card-genres">${genrePills}</div>
+                ${tagPills ? `<div class="card-tags">${tagPills}</div>` : ''}
             </div>
         </div>`;
 }
@@ -59,7 +64,17 @@ function renderMovieGrid(movies, emptyMessage) {
     onCheckboxChange();
 }
 
+// Anything a person typed - titles entered by hand, tags - is interpolated into
+// HTML below, so it has to be escaped. Genres come from IMDb, titles and tags
+// do not.
+function esc(value) {
+    return String(value ?? '').replace(/[&<>"']/g, c => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+    }[c]));
+}
+
 const moviesById = new Map();
+let knownTags = [];
 
 function indexMovies(movies) {
     moviesById.clear();
@@ -219,6 +234,45 @@ async function deleteSelectedMovies() {
     loadMovieData();
 }
 
+function parseTags(value) {
+    return value.split(',').map(t => t.trim()).filter(Boolean);
+}
+
+function currentTagSet() {
+    return new Set(parseTags(document.getElementById('tags-input').value)
+        .map(t => t.toLowerCase()));
+}
+
+function renderTagSuggestions() {
+    const box = document.getElementById('tag-suggestions');
+    const chosen = currentTagSet();
+    box.innerHTML = knownTags
+        .map(t => `<button type="button" class="${chosen.has(t) ? 'on' : ''}" data-tag="${esc(t)}">${esc(t)}</button>`)
+        .join('');
+}
+
+function toggleTag(tag) {
+    const input = document.getElementById('tags-input');
+    const tags = parseTags(input.value);
+    const at = tags.findIndex(t => t.toLowerCase() === tag.toLowerCase());
+    if (at === -1) {
+        tags.push(tag);
+    } else {
+        tags.splice(at, 1);
+    }
+    input.value = tags.join(', ');
+    renderTagSuggestions();
+}
+
+async function loadKnownTags() {
+    try {
+        const response = await fetch('/api/movies/tags');
+        if (response.ok) knownTags = await response.json();
+    } catch (e) {
+        knownTags = [];   // suggestions are a convenience, never a blocker
+    }
+}
+
 function showRatingError(message) {
     const error = document.getElementById('rating-error');
     error.textContent = message;
@@ -236,6 +290,8 @@ function openRatingModal(movieId) {
     showRatingError('');
     input.value = movie.rating.toFixed(1);
     reviewInput.value = movie.review || '';
+    document.getElementById('tags-input').value = (movie.tags || []).join(', ');
+    renderTagSuggestions();
     modal.dataset.movieId = movieId;
     modal.classList.add('active');
     input.focus();
@@ -254,6 +310,7 @@ async function saveRating() {
     const movieId = modal.dataset.movieId;
     const rating = parseFloat(document.getElementById('rating-input').value);
     const review = document.getElementById('review-input').value.trim();
+    const tags = parseTags(document.getElementById('tags-input').value);
 
     if (Number.isNaN(rating) || rating < 0 || rating > 10) {
         showRatingError('Enter a number between 0 and 10.');
@@ -270,7 +327,7 @@ async function saveRating() {
         response = await fetch(`/api/movies/${movieId}/rating`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ rating, review }),
+            body: JSON.stringify({ rating, review, tags }),
         });
     } catch (e) {
         showRatingError('Could not reach the server. Nothing was saved.');
@@ -288,6 +345,7 @@ async function saveRating() {
     }
 
     closeRatingModal();
+    loadKnownTags();
     loadMovieData();
 }
 
@@ -305,6 +363,13 @@ document.addEventListener('keydown', (e) => {
 document.getElementById('rating-modal').addEventListener('click', (e) => {
     if (e.target.id === 'rating-modal') closeRatingModal();
 });
+document.getElementById('tags-input').addEventListener('input', renderTagSuggestions);
+document.getElementById('tag-suggestions').addEventListener('click', (e) => {
+    const button = e.target.closest('button[data-tag]');
+    if (button) toggleTag(button.dataset.tag);
+});
+
+loadKnownTags();
 
 const bootstrapped = readBootstrap();
 if (bootstrapped) {

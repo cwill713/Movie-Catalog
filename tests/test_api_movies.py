@@ -79,7 +79,11 @@ def a_movie(client):
     yield movie
     client.patch(
         f"/api/movies/{movie['id']}/rating",
-        json={"rating": movie["rating"], "review": movie["review"] or ""},
+        json={
+            "rating": movie["rating"],
+            "review": movie["review"] or "",
+            "tags": movie["tags"],
+        },
     )
 
 
@@ -211,7 +215,7 @@ def test_the_page_ships_every_field_the_renderer_needs(client):
         pytest.skip("no movies in the database")
 
     needed = {
-        "id", "title", "year", "rating", "review",
+        "id", "title", "year", "rating", "review", "tags",
         "genre_one", "genre_two", "genre_three", "imdb_id", "poster_url",
     }
     missing = needed - set(rows[0])
@@ -224,3 +228,89 @@ def test_the_grid_is_rendered_client_side_only(client):
     assert 'id="movie-grid" class="poster-grid"></div>' in html, (
         "the template is building cards again - that duplication drifted once already"
     )
+
+
+# ---------------------------------------------------------------------------
+# Mood tags - entry_tags, keyed (entry_id, profile_id, tag)
+# ---------------------------------------------------------------------------
+
+
+def test_tags_are_saved_and_returned(client, a_movie):
+    response = client.patch(
+        f"/api/movies/{a_movie['id']}/rating",
+        json={"rating": 7.0, "tags": ["cosy", "rainy day"]},
+    )
+    assert response.status_code == 200
+    assert sorted(response.json()["tags"]) == ["cosy", "rainy day"]
+
+
+def test_tags_survive_a_refetch(client, a_movie):
+    client.patch(
+        f"/api/movies/{a_movie['id']}/rating",
+        json={"rating": 7.0, "tags": ["comfort watch"]},
+    )
+    refetched = next(
+        m for m in client.get("/api/movies").json() if m["id"] == a_movie["id"]
+    )
+    assert refetched["tags"] == ["comfort watch"]
+
+
+def test_updating_only_the_rating_does_not_destroy_tags(client, a_movie):
+    """Omitting `tags` must leave them alone - same guard as review."""
+    client.patch(
+        f"/api/movies/{a_movie['id']}/rating",
+        json={"rating": 7.0, "tags": ["keep me"]},
+    )
+
+    response = client.patch(f"/api/movies/{a_movie['id']}/rating", json={"rating": 9.0})
+
+    assert response.json()["rating"] == 9.0
+    assert response.json()["tags"] == ["keep me"]
+
+
+def test_an_empty_tag_list_clears_them(client, a_movie):
+    client.patch(
+        f"/api/movies/{a_movie['id']}/rating",
+        json={"rating": 7.0, "tags": ["temporary"]},
+    )
+    response = client.patch(
+        f"/api/movies/{a_movie['id']}/rating", json={"rating": 7.0, "tags": []}
+    )
+    assert response.json()["tags"] == []
+
+
+@pytest.mark.parametrize(
+    "sent, expected, reason",
+    [
+        (["Cosy"], ["cosy"], "case is folded"),
+        (["  cosy  "], ["cosy"], "surrounding space is trimmed"),
+        (["rainy    day"], ["rainy day"], "inner whitespace collapses"),
+        (["cosy", "COSY", " cosy "], ["cosy"], "near-duplicates converge"),
+        (["cosy", "", "   "], ["cosy"], "blanks are dropped"),
+    ],
+)
+def test_tags_are_normalised(client, a_movie, sent, expected, reason):
+    """`tag` is part of the primary key, so unnormalised input fragments the
+    vocabulary into near-duplicates that can never be grouped."""
+    response = client.patch(
+        f"/api/movies/{a_movie['id']}/rating", json={"rating": 7.0, "tags": sent}
+    )
+    assert response.json()["tags"] == expected, reason
+
+
+def test_tag_vocabulary_lists_what_is_in_use(client, a_movie):
+    client.patch(
+        f"/api/movies/{a_movie['id']}/rating",
+        json={"rating": 7.0, "tags": ["distinctive-test-tag"]},
+    )
+    response = client.get("/api/movies/tags")
+    assert response.status_code == 200
+    assert "distinctive-test-tag" in response.json()
+
+
+def test_too_many_tags_are_rejected(client, a_movie):
+    response = client.patch(
+        f"/api/movies/{a_movie['id']}/rating",
+        json={"rating": 7.0, "tags": [f"tag-{i}" for i in range(26)]},
+    )
+    assert response.status_code == 422
