@@ -40,8 +40,8 @@ def test_pages_redirect_to_login_when_signed_out(anon_client, path):
 
 @pytest.mark.parametrize(
     "path",
-    ["/api/movies", "/api/movies/search?title=x", "/api/catalog/stats",
-     "/api/catalog/search", "/api/catalog/genres"],
+    ["/api/movies", "/api/movies/search?title=x", "/api/movies/tags",
+     "/api/catalog/stats", "/api/catalog/search", "/api/catalog/genres"],
 )
 def test_api_returns_401_when_signed_out(anon_client, path):
     """401 rather than a redirect - these are called by fetch, not navigation."""

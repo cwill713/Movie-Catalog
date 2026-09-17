@@ -15,6 +15,7 @@ router = APIRouter(prefix="/api/movies", tags=["movies"], dependencies=[Depends(
 class RatingUpdate(BaseModel):
     rating: float = Field(ge=0.0, le=10.0)
     review: Optional[str] = Field(default=None, max_length=5000)
+    tags: Optional[list[str]] = Field(default=None, max_length=25)
 
 
 @router.get("", response_model=list[MovieResponse])
@@ -24,6 +25,12 @@ def list_movies() -> list[MovieResponse]:
 @router.get("/search", response_model=list[MovieResponse])
 def search_movies(title: str) -> list[MovieResponse]:
     return crud.search_movies(title)
+
+
+@router.get("/tags", response_model=list[str])
+def list_tags() -> list[str]:
+    """Tags already in use in this household, most-used first."""
+    return crud.all_tags()
 
 
 @router.post("", response_model=MovieResponse, status_code=201)
@@ -44,8 +51,18 @@ def update_movie(movie_id: UUID, movie: MovieCreate) -> MovieResponse:
 
 @router.patch("/{movie_id}/rating", response_model=MovieResponse)
 def update_movie_rating(movie_id: UUID, payload: RatingUpdate) -> MovieResponse:
-    """Omitting `review` leaves the existing one untouched; sending it empty clears it."""
-    extra = {"review": payload.review} if "review" in payload.model_fields_set else {}
+    """Omitting a field leaves it untouched; sending it empty clears it.
+
+    That applies to `review` and `tags` alike - the distinction matters because
+    both share the entry with the rating, so treating absent as empty would wipe
+    them every time a score was nudged.
+    """
+    sent = payload.model_fields_set
+    extra: dict[str, object] = {}
+    if "review" in sent:
+        extra["review"] = payload.review
+    if "tags" in sent:
+        extra["tags"] = payload.tags or []
     result = crud.update_rating(movie_id, payload.rating, **extra)
     if result is None:
         raise HTTPException(status_code=404, detail="Movie not found")

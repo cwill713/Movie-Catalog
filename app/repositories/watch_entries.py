@@ -26,6 +26,15 @@ _SELECT = """
              else we.manual_genres end                    as genres,
         er.rating                                         as rating,
         er.review                                         as review,
+        -- Correlated subquery rather than a join: entry_tags is one-to-many, so
+        -- joining it would multiply every entry row by its tag count and corrupt
+        -- the rating. This stays one round-trip - it is not the N+1 problem,
+        -- which is N+1 *queries* from the application, not one query the planner
+        -- evaluates per row.
+        (select coalesce(array_agg(et.tag order by et.tag), '{}')
+           from entry_tags et
+          where et.entry_id = we.id
+            and et.profile_id = %(profile_id)s)          as tags,
         we.imdb_id,
         t.poster_url
     from watch_entries we
@@ -52,6 +61,7 @@ def _row_to_movie(row: dict[str, Any]) -> dict[str, Any]:
         "genre_three": genres[2],
         "rating": float(row["rating"]) if row["rating"] is not None else 0.0,
         "review": row.get("review"),
+        "tags": list(row.get("tags") or []),
         "imdb_id": row.get("imdb_id"),
         "poster_url": row.get("poster_url"),
     }
@@ -139,16 +149,65 @@ def update_movie(movie_id: UUID, movie: MovieCreate) -> dict[str, Any] | None:
     return {"id": movie_id, **movie.model_dump()}
 
 
-def update_rating(
-    movie_id: UUID, rating: float, review: str | None | object = _UNSET
-) -> dict[str, Any] | None:
-    """Set this profile's rating, and its review when one was supplied.
+def normalise_tags(tags: list[str]) -> list[str]:
+    """Trim, collapse inner whitespace, lowercase, drop blanks, de-duplicate.
 
-    `review` defaults to `_UNSET` rather than None so that omitting it leaves any
-    existing review alone, while passing None or "" clears it. Treating "absent"
-    and "empty" as the same thing would mean a caller updating only the score
-    silently destroyed the prose - the same shape of loss the ingest upsert
-    guards against.
+    `tag` is part of the primary key, so "Cozy", "cozy" and " cozy " would
+    otherwise be three separate tags and the vocabulary would fragment into
+    near-duplicates within a week.
+    """
+    seen: dict[str, None] = {}
+    for raw in tags:
+        cleaned = " ".join(raw.split()).lower()
+        if cleaned:
+            seen[cleaned] = None
+    return list(seen)
+
+
+def _replace_tags(conn, entry_id: UUID, profile_id: UUID, tags: list[str]) -> None:
+    """Write only the difference, so unchanged tags keep their created_at."""
+    desired = set(normalise_tags(tags))
+    current = {
+        r["tag"]
+        for r in conn.execute(
+            "select tag from entry_tags where entry_id = %s and profile_id = %s",
+            (entry_id, profile_id),
+        ).fetchall()
+    }
+
+    removed = current - desired
+    if removed:
+        conn.execute(
+            """delete from entry_tags
+                where entry_id = %s and profile_id = %s and tag = any(%s)""",
+            (entry_id, profile_id, list(removed)),
+        )
+
+    added = desired - current
+    if added:
+        # One statement via unnest rather than cursor.executemany: a single
+        # round-trip, and Connection has no executemany in psycopg3 - that lives
+        # on the cursor.
+        conn.execute(
+            """insert into entry_tags (entry_id, profile_id, tag)
+               select %s, %s, unnest(%s::text[])""",
+            (entry_id, profile_id, list(added)),
+        )
+
+
+def update_rating(
+    movie_id: UUID,
+    rating: float,
+    review: str | None | object = _UNSET,
+    tags: list[str] | object = _UNSET,
+) -> dict[str, Any] | None:
+    """Set this profile's rating, plus its review and tags when supplied.
+
+    `review` and `tags` default to `_UNSET` rather than None so that omitting
+    either leaves it alone, while passing an empty value clears it. Treating
+    "absent" and "empty" as the same thing would mean a caller updating only the
+    score silently destroyed the prose or the tags - the same shape of loss the
+    ingest upsert guards against.
 
     The read must follow the write: returning a row selected beforehand sends
     the caller the previous values under a response model that promises the
@@ -182,8 +241,32 @@ def update_rating(
                                      review = excluded.review""",
                     (movie_id, params["profile_id"], rating, review or None),
                 )
+
+            if tags is not _UNSET:
+                _replace_tags(conn, movie_id, params["profile_id"], tags)
+
         row = conn.execute(_SELECT + " and we.id = %(id)s", params).fetchone()
     return _row_to_movie(row) if row else None
+
+
+def all_tags() -> list[str]:
+    """Every tag in use, most-used first, for offering reuse in the UI.
+
+    Household-wide rather than per-profile: RLS already confines this to our own
+    household, and seeing what the other person has used is what stops two
+    people inventing "comfort watch" and "comfy" for the same thing.
+    """
+    with connection() as conn:
+        rows = conn.execute(
+            """select et.tag, count(*) as uses
+                 from entry_tags et
+                 join watch_entries we on we.id = et.entry_id
+                where we.household_id = %(household_id)s
+                group by et.tag
+                order by uses desc, et.tag""",
+            _params(),
+        ).fetchall()
+    return [r["tag"] for r in rows]
 
 
 def delete_movies(ids: list[UUID]) -> int:
