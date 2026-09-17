@@ -16,6 +16,7 @@ class MovieResponse(MovieCreate):
     id: UUID
     imdb_id: Optional[str] = None
     poster_url: Optional[str] = None
+    review: Optional[str] = None
 
 class MovieDeleteRequest(BaseModel):
     ids: list[UUID] = Field(min_length=1)

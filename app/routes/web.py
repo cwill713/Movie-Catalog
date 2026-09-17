@@ -2,6 +2,7 @@ from pathlib import Path
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 
@@ -20,10 +21,19 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 def index(request: Request, profile=Depends(current_profile)):
     if profile is None:
         return RedirectResponse(f"/login?next=/", status_code=303)
+    movies = crud.get_movies()
     return templates.TemplateResponse(
         request=request,
         name="index.html",
-        context={"movies": crud.get_movies(), "profile": profile},
+        context={
+            "movies": movies,
+            # Same rows again, JSON-safe, so the server-rendered grid is
+            # interactive on first paint instead of only after /api/movies
+            # returns. Without it the rating looks clickable but is not until
+            # the fetch lands.
+            "movies_json": jsonable_encoder(movies),
+            "profile": profile,
+        },
     )
 
 

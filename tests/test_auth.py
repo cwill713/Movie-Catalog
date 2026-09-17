@@ -52,6 +52,7 @@ def test_api_returns_401_when_signed_out(anon_client, path):
     ("POST", "/api/movies"),
     ("DELETE", "/api/movies"),
     ("PUT", "/api/movies/00000000-0000-0000-0000-000000000000"),
+    ("PATCH", "/api/movies/00000000-0000-0000-0000-000000000000/rating"),
 ])
 def test_api_writes_are_gated(anon_client, method, path):
     """TestClient.delete() takes no json= kwarg, so go through .request()."""
