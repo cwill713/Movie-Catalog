@@ -817,3 +817,32 @@ body {
     border-color: var(--maroon, #7a1f2c);
     color: #fff;
 }
+
+#watched-input {
+    width: 100%;
+    padding: 0.45rem 0.5rem;
+    background: #1a1416;
+    border: 1px solid #4a3a3d;
+    border-radius: 4px;
+    color: #fff;
+    font-family: inherit;
+    font-size: 0.9rem;
+}
+
+#watched-input:focus {
+    outline: none;
+    border-color: var(--maroon-light, #c9556a);
+}
+
+/* Chrome renders the picker glyph near-black on this background otherwise. */
+#watched-input::-webkit-calendar-picker-indicator {
+    filter: invert(0.7);
+    cursor: pointer;
+}
+
+.card-meta .seen-on {
+    color: #9a8a8d;
+    font-size: 0.65rem;
+    margin-left: auto;
+    white-space: nowrap;
+}

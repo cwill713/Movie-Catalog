@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional
 from uuid import UUID
 
@@ -18,6 +18,9 @@ class MovieResponse(MovieCreate):
     poster_url: Optional[str] = None
     review: Optional[str] = None
     tags: list[str] = Field(default_factory=list)
+    # Household-level, unlike rating/review/tags: it lives on watch_entries, so
+    # it is when *we* watched it, not when one person did.
+    watched_on: Optional[date] = None
 
 class MovieDeleteRequest(BaseModel):
     ids: list[UUID] = Field(min_length=1)

@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Personal Movie Catalog</title>
-    <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}?v=19">
+    <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}?v=20">
 </head>
 <body>
     <div class="top-bar">
@@ -105,6 +105,9 @@
                     <label for="review-input">Review <span class="label-hint">optional</span></label>
                     <textarea id="review-input" rows="5" maxlength="5000"
                               placeholder="What did you make of it?"></textarea>
+                    <label for="watched-input">Watched on <span class="label-hint">optional, shared with the household</span></label>
+                    <input type="date" id="watched-input">
+
                     <label for="tags-input">Mood tags <span class="label-hint">comma separated</span></label>
                     <input type="text" id="tags-input" placeholder="cosy, rainy day, comfort watch">
                     <div id="tag-suggestions" class="tag-suggestions"></div>
@@ -121,7 +124,7 @@
     </div>
 
     <script id="bootstrap-movies" type="application/json">{{ movies_json | tojson }}</script>
-    <script src="{{ url_for('static', path='app.js') }}?v=17"></script>
+    <script src="{{ url_for('static', path='app.js') }}?v=18"></script>
 </body>
 
 </html>

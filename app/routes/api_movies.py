@@ -1,8 +1,9 @@
+from datetime import date, timedelta
 from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.auth import require_profile
 
@@ -16,6 +17,25 @@ class RatingUpdate(BaseModel):
     rating: float = Field(ge=0.0, le=10.0)
     review: Optional[str] = Field(default=None, max_length=5000)
     tags: Optional[list[str]] = Field(default=None, max_length=25)
+    watched_on: Optional[date] = None
+
+    @field_validator("watched_on")
+    @classmethod
+    def _within_living_memory(cls, value: Optional[date]) -> Optional[date]:
+        """Catch typos, without pretending to know the user's intent.
+
+        A mistyped year (2206 for 2026) would otherwise sit in the data and
+        quietly skew any future recency weighting. The bounds are deliberately
+        loose: 1888 matches the year field's floor elsewhere, and tomorrow rather
+        than today allows for the client being a timezone ahead of the server.
+        """
+        if value is None:
+            return value
+        if value.year < 1888:
+            raise ValueError("earlier than the first films")
+        if value > date.today() + timedelta(days=1):
+            raise ValueError("in the future")
+        return value
 
 
 @router.get("", response_model=list[MovieResponse])
@@ -63,6 +83,8 @@ def update_movie_rating(movie_id: UUID, payload: RatingUpdate) -> MovieResponse:
         extra["review"] = payload.review
     if "tags" in sent:
         extra["tags"] = payload.tags or []
+    if "watched_on" in sent:
+        extra["watched_on"] = payload.watched_on
     result = crud.update_rating(movie_id, payload.rating, **extra)
     if result is None:
         raise HTTPException(status_code=404, detail="Movie not found")
