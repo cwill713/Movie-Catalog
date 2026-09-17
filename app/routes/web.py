@@ -21,17 +21,13 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 def index(request: Request, profile=Depends(current_profile)):
     if profile is None:
         return RedirectResponse(f"/login?next=/", status_code=303)
-    movies = crud.get_movies()
     return templates.TemplateResponse(
         request=request,
         name="index.html",
         context={
-            "movies": movies,
-            # Same rows again, JSON-safe, so the server-rendered grid is
-            # interactive on first paint instead of only after /api/movies
-            # returns. Without it the rating looks clickable but is not until
-            # the fetch lands.
-            "movies_json": jsonable_encoder(movies),
+            # The page ships its rows inline and app.js renders them, so the
+            # first paint costs no round-trip and only one renderer exists.
+            "movies_json": jsonable_encoder(crud.get_movies()),
             "profile": profile,
         },
     )
