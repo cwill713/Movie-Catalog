@@ -6,6 +6,9 @@ before they reach the database. Phase 2 moves the DB behind a repository,
 at which point these get a proper throwaway test database.
 """
 
+import json
+from html import unescape as html_unescape
+
 import pytest
 
 
@@ -192,24 +195,32 @@ def test_an_overlong_review_is_rejected(client, a_movie):
     assert response.status_code == 422
 
 
-def test_server_rendered_ratings_are_clickable(client):
-    """The Jinja grid must carry the same rating handler the JS grid does.
+def test_the_page_ships_every_field_the_renderer_needs(client):
+    """The inline payload must carry each field renderMovieCard/openRatingModal read.
 
-    The card markup exists twice - once in index.html for first paint, once in
-    renderMovieCard() - and they drift. When only the JS copy had the handler,
-    ratings looked identical but did nothing until /api/movies returned, so the
-    first click after a page load was silently swallowed.
+    There is now exactly one renderer (app.js), fed by this payload, so the old
+    template-vs-JS drift cannot recur. What replaces it as the failure mode is a
+    field the renderer reads and the payload does not send - which shows up as
+    "undefined" on a card rather than an error.
     """
     html = client.get("/").text
-    if "poster-card" not in html:
-        pytest.skip("no movies rendered")
-    assert "openRatingModal(" in html, "server-rendered ratings are not clickable"
+    payload = html.split('id="bootstrap-movies" type="application/json">')[1]
+    payload = payload.split("</script>")[0]
+    rows = json.loads(html_unescape(payload))
+    if not rows:
+        pytest.skip("no movies in the database")
+
+    needed = {
+        "id", "title", "year", "rating", "review",
+        "genre_one", "genre_two", "genre_three", "imdb_id", "poster_url",
+    }
+    missing = needed - set(rows[0])
+    assert not missing, f"bootstrap payload is missing {sorted(missing)}"
 
 
-def test_the_page_bootstraps_movie_data_for_the_modal(client):
-    """openRatingModal reads review text from that payload, not from the DOM."""
+def test_the_grid_is_rendered_client_side_only(client):
+    """One renderer. The template must not grow a second copy of the card."""
     html = client.get("/").text
-    if "poster-card" not in html:
-        pytest.skip("no movies rendered")
-    assert 'id="bootstrap-movies"' in html
-    assert '"review"' in html, "bootstrap payload is missing the review field"
+    assert 'id="movie-grid" class="poster-grid"></div>' in html, (
+        "the template is building cards again - that duplication drifted once already"
+    )

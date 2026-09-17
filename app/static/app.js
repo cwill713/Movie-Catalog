@@ -66,14 +66,17 @@ function indexMovies(movies) {
     movies.forEach(m => moviesById.set(String(m.id), m));
 }
 
-// Seed from the server-rendered payload so the Jinja grid is interactive
-// immediately; loadMovieData() replaces both grid and map moments later.
-const bootstrap = document.getElementById('bootstrap-movies');
-if (bootstrap) {
+// The page ships its rows inline so the first paint needs no round-trip.
+// renderMovieCard() is the only thing that builds a card - the template used to
+// build one too, and the two drifted the moment a feature touched one of them.
+function readBootstrap() {
+    const el = document.getElementById('bootstrap-movies');
+    if (!el) return null;
     try {
-        indexMovies(JSON.parse(bootstrap.textContent));
+        return JSON.parse(el.textContent);
     } catch (e) {
         console.error('bootstrap-movies did not parse', e);
+        return null;
     }
 }
 
@@ -287,4 +290,10 @@ document.getElementById('rating-modal').addEventListener('click', (e) => {
     if (e.target.id === 'rating-modal') closeRatingModal();
 });
 
-loadMovieData();
+const bootstrapped = readBootstrap();
+if (bootstrapped) {
+    indexMovies(bootstrapped);
+    renderMovieGrid(bootstrapped, 'There is no current data');
+} else {
+    loadMovieData();
+}
