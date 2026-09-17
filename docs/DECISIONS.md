@@ -547,6 +547,35 @@ are idempotent - so going deeper later costs only the new titles.
 
 ---
 
+### ADR-012a - depth re-examined once storage stopped binding
+
+**Status:** Accepted · 2026-09-16 · confirms the decision above on new grounds
+
+The decision above opens "catalog size is capped by the database's 500 MB
+limit", and >=1,000 votes was rejected for using ~62% of that budget, leaving no
+headroom for an HNSW rebuild or a second embedding model. The database is on a
+tier with **8 GB**, so that cap no longer applies: the current catalog occupies
+~1%, and every row in the sizing table above is affordable - including no
+threshold at all, at roughly 2.5-3 GB.
+
+**The threshold stays at >=2,500 votes / 37,605 titles anyway**, now as a
+deliberate product choice rather than a storage constraint: surfacing obscure
+titles is not a goal for this catalog.
+
+**What the real constraint became.** Storage was never going to be the expensive
+part once the tier changed. Ingest is ~4 seconds and enrichment runs at ~199
+titles/sec, but every title also needs an embedding generated on local hardware,
+and that cost scales linearly with title count in GPU time. Had the answer been
+"go deeper", the middle path already described above would apply - ingest deep so
+everything is searchable and filterable, embed only the popular tier - because it
+separates the cheap cost from the expensive one.
+
+**Revisit if.** Unchanged in substance, but the trigger is now purely about
+results rather than budget: the recommender feels like it only knows obvious
+titles.
+
+---
+
 ## ADR-013
 
 ### Rank search by word similarity, not whole-string similarity
