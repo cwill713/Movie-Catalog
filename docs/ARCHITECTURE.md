@@ -133,7 +133,7 @@ recommendation possible, but only their author may edit them.
 
 | Table | Holds |
 |---|---|
-| `titles` | The catalog. IMDb structured fields, OMDb prose and artwork, a `halfvec(768)` embedding, and a generated `tsvector` for keyword search. |
+| `titles` | The catalog. IMDb structured fields, OMDb prose and artwork, a `halfvec(1024)` embedding, and a generated `tsvector` for keyword search. |
 | `households` · `profiles` | A household shares a catalog; profiles hold individual taste vectors. |
 | `watch_entries` | Household-level record that a title was seen. |
 | `entry_ratings` | **Per-person** rating, review text, and review embedding. |

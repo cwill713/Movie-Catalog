@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     llm_provider: str = "ollama"
     ollama_base_url: str = "http://localhost:11434"
     ollama_chat_model: str = "llama3.1"
-    ollama_embed_model: str = "nomic-embed-text"
+    ollama_embed_model: str = "mxbai-embed-large"   # 1024 dims; see migration 005
     anthropic_api_key: str = ""
 
     # --- Ingest ---

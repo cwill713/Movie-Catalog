@@ -40,6 +40,22 @@ ENRICHMENT = {
 }
 
 
+def embedding_dims(conn) -> int:
+    """The dimension `titles.embedding` actually declares.
+
+    Hardcoding this broke the test the moment migration 005 widened the column
+    from 768 to 1024. The dimension is a property of the embedding model, so it
+    is read from the schema for the same reason UPSERT is imported rather than
+    restated: the test must not carry its own copy of a fact it does not own.
+    """
+    row = conn.execute(
+        """select a.atttypmod as dims
+             from pg_attribute a
+            where a.attrelid = 'titles'::regclass and a.attname = 'embedding'"""
+    ).fetchone()
+    return row["dims"]
+
+
 @pytest.fixture
 def conn():
     settings = get_settings()
@@ -65,7 +81,7 @@ def test_upsert_refreshes_imdb_columns_but_keeps_enrichment(conn):
                    %(embedding)s, now())""",
         {
             "imdb_id": FAKE_ID,
-            "embedding": "[" + ",".join(["0.1"] * 768) + "]",
+            "embedding": "[" + ",".join(["0.1"] * embedding_dims(conn)) + "]",
             **ENRICHMENT,
         },
     )
