@@ -34,6 +34,8 @@ changes to **Superseded** and a new entry explains what replaced it.
 | [014](#adr-014) | Row-level security via a non-owner role | Accepted |
 | [015](#adr-015) | Credential handling, and HTTPS before deployment | Accepted |
 | [016](#adr-016) | Bind request identity in pure ASGI middleware | Accepted |
+| [017](#adr-017) | Embedding pipeline: one vector per title, written in resumable batches | Accepted |
+| [018](#adr-018) | Row-level security on every public table, not just the user-owned ones | Accepted |
 
 ---
 
@@ -892,3 +894,101 @@ costs an hour; a false pass costs however long until a person stumbles into it.
 **Revisit if.** The app moves to async route handlers throughout, which would
 remove the threadpool boundary - though the middleware would still be the right
 place.
+
+---
+
+## ADR-017
+
+### Embedding pipeline: one vector per title, written in resumable batches
+
+**Status:** Accepted · 2026-10-01, pipeline 2026-10-17
+
+**Context.** Phase 6 needs a vector for every catalog title before any semantic
+search can exist. Three things had to be settled: which model and dimension,
+what text goes into the vector, and how a 37,605-row job survives bad rows
+without either stalling or silently losing data.
+
+**Decision.**
+
+*Model and dimension.* `mxbai-embed-large`, stored as `halfvec(1024)`. All three
+vector columns (title, profile taste, rating review) were widened together, not
+just the one Phase 6 needed - leaving two at the old width only hides the same
+mismatch until a later phase. The columns were still empty, so the change cost
+nothing. The previously configured 768-dim model was not installed at all.
+
+*What is embedded.* Title, year, type, genres, director, up to five actors,
+plot, content rating, and the id; any field that is null is skipped rather than
+written as a placeholder. **Numbers are not embedded** (runtime, rating, votes):
+a model has no sense of magnitude, so "under two hours" is a SQL `WHERE`, not a
+vector question, and padding the string dilutes the vector. Writers were dropped
+as the longest string with the weakest signal.
+
+*The job.* Select 50 rows at a time where `embedding is null`, most-voted first.
+Embed each row with its own model call, keyed by id, then write the batch in one
+commit. Any failure rolls the batch back and redoes it one row at a time; a row
+that still fails goes on an in-memory skip-list and into an end-of-run report.
+Each update asserts it touched exactly one row.
+
+**Why.**
+- `where embedding is null` makes the job resumable: an interrupted run, or a
+  rerun after failures, simply continues. No progress file.
+- One commit per batch rather than per row, because each commit is a network
+  round-trip to a hosted database - 750 commits instead of 37,605.
+- A batched model call was rejected. Its reply is a plain list, so matching
+  vectors to ids is by position, and a short reply would silently drop rows
+  unless guarded. Embedding rows individually means a vector is bound to its id
+  the moment it returns and a failure names its row. Embedding speed was not a
+  constraint; the full run took about 70 minutes.
+- The skip-list is what lets the loop finish. Without it a permanently failing
+  row still has a null embedding, sorts to the top, and is fetched forever.
+
+**Consequences.**
+- No vector records which model produced it. Changing the model means
+  regenerating every row (see ADR-005), and nothing in the data says which rows
+  are stale. Provenance columns were left out while the table was empty and now
+  need a backfill.
+- There is no circuit breaker. If the model server dies mid-run, every remaining
+  row fails fast and is reported; nothing wrong is written, and a rerun recovers.
+- The vector index is built after the bulk load, not before: inserting into a
+  live graph index re-links the graph on every row.
+
+**Verified by breaking it.** Forcing one row's embed to fail produced one failed
+batch, two good rows, one reported row, and a loop that ended. Forcing every
+write to match zero rows reported all three and left the database unchanged. An
+earlier version of the write path rolled back after every update, so every write
+would have been undone and the run would still have looked successful.
+
+**Revisit if.** The model changes, or the catalog grows enough that a single
+sequential run becomes impractical.
+
+---
+
+## ADR-018
+
+### Row-level security on every public table, not just the user-owned ones
+
+**Status:** Accepted · 2026-10-13
+
+**Context.** The hosting provider's security scan flagged the shared catalog
+table as reachable without row-level security. The alert overstated the
+exposure: the anonymous role held no privileges on that table, and a request
+with the public key was refused. But the table had a grant and no policy, so the
+grant was the only fence, and any future grant would have opened it silently.
+
+**Decision.** Enable RLS on the catalog table with a single read-only policy for
+signed-in users, and enable it with no policies on the migration ledger so every
+non-owner role is denied by default. Writes come from admin scripts running as
+the table owner, which bypasses RLS.
+
+**Why.** Privilege grants and row policies are two independent layers. User-owned
+tables had both; the shared table had one. "Nobody should have access" should be
+enforced by a policy that exists, not by the absence of a grant.
+
+**Consequences.**
+- Every table in the exposed schema now has RLS, so the scan has nothing left to
+  flag on tables.
+- Checked before acting: the alert was verified against actual privileges and a
+  live request, then the fix was dry-run in a rolled-back transaction.
+- Not yet done: two `SECURITY DEFINER` helper functions are callable through the
+  API and should move to a schema that is not exposed; three functions lack a
+  pinned `search_path`.
