@@ -992,3 +992,61 @@ enforced by a policy that exists, not by the absence of a grant.
 - Not yet done: two `SECURITY DEFINER` helper functions are callable through the
   API and should move to a schema that is not exposed; three functions lack a
   pinned `search_path`.
+
+---
+
+## ADR-019
+
+### Vector index: HNSW, cosine, built after the bulk load
+
+**Status:** Accepted (draft) · 2026-10-21
+
+**Context.** Every catalog title has a 1024-dimension embedding (ADR-017), but
+similarity search over them was a full scan: each query compared against all
+37,605 vectors. Semantic search needs an index, and an approximate-nearest-
+neighbour index has three settings that have to be chosen: the structure, the
+distance measure, and the build parameters.
+
+**Decision.** One HNSW index on the title embedding column, using the half-
+precision cosine operator class, `m = 16`, `ef_construction = 200`. Applied as
+migration 007 through the migration runner, over a direct database connection.
+
+**Why.**
+- *HNSW over IVFFlat.* IVFFlat clusters the data up front and needs
+  representative rows to exist before it is built; HNSW has no training step and
+  keeps good recall as rows are added. The cost is a larger index and a slower
+  build, which is acceptable for a catalog that changes rarely.
+- *Cosine.* Text embeddings carry meaning in direction, not length. The operator
+  class has to match the operator the queries use (`<=>`); a mismatch does not
+  error, the planner just ignores the index and scans the table.
+- *`m = 16`.* The library default: how many neighbours each node links to. More
+  links raise recall and index size together; nothing about this table argues for
+  more.
+- *`ef_construction = 200`.* Above the default of 64: build-time search width.
+  It costs only build time, never query time, and the build is a one-off.
+  Recall at query time is tuned separately with `hnsw.ef_search` and needs no
+  rebuild.
+- *Built after the bulk load*, as planned in ADR-017: inserting into a live
+  graph index re-links the graph on every row.
+
+**Consequences.**
+- The index is 98 MB, against about 12 MB for all other indexes on the table
+  combined. Graph links cost far more than a sorted key and a pointer.
+- Verified with `EXPLAIN ANALYZE`: the planner chooses an index scan on it for
+  an ordered-by-cosine-distance query.
+- The migration uses `create index if not exists`. The build outlived the
+  hosting dashboard's SQL editor, which reports a network failure while the
+  statement keeps running on the server; a re-run through the runner would
+  otherwise fail on "already exists" and leave the ledger out of step.
+- The build must run single-process. Parallel index-build workers share memory
+  through a small shared-memory area on this instance and failed with "no space
+  left on device"; `max_parallel_maintenance_workers = 0` avoids it. The error
+  names the disk but is about shared memory.
+- Long statements must not go through the dashboard editor: it has a statement
+  timeout the session cannot lift. Use the migration runner.
+- Recall has not been measured against an exact scan. Approximate results are
+  assumed good enough until a known-neighbour check says otherwise.
+
+**Revisit if.** Query recall looks poor (raise `ef_search` first, then rebuild
+with larger `m`), or the catalog grows enough that build time or index size
+matters.
